@@ -1,0 +1,77 @@
+name: Enviar ¿Qué te falta? a revisión
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: que-te-falta-app-store-submit
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    name: Actualizar ficha y enviar a Apple
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: app-store
+    env:
+      APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+      APP_STORE_ASSET_KEY: ${{ secrets.APP_STORE_ASSET_KEY }}
+
+    steps:
+      - name: Descargar la automatización
+        uses: actions/checkout@v4
+
+      - name: Preparar Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Instalar fastlane
+        run: gem install fastlane --no-document
+
+      - name: Descifrar capturas y vídeo
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet cryptography
+          export ASSET_ARCHIVE="$RUNNER_TEMP/app-store-assets.zip"
+          export ASSET_DIR="$RUNNER_TEMP/app-store-assets"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from cryptography.fernet import Fernet
+
+          encrypted = Path(".app-store/secure-assets.bin").read_bytes()
+          decrypted = Fernet(os.environ["APP_STORE_ASSET_KEY"].encode()).decrypt(encrypted)
+          Path(os.environ["ASSET_ARCHIVE"]).write_bytes(decrypted)
+          PY
+          mkdir -p "$ASSET_DIR"
+          ditto -x -k "$ASSET_ARCHIVE" "$ASSET_DIR"
+          test "$(find "$ASSET_DIR/screenshots/es-ES" -type f -name '*.png' | wc -l | tr -d ' ')" = "5"
+          test -s "$ASSET_DIR/review-video.mp4"
+          echo "SCREENSHOTS_PATH=$ASSET_DIR/screenshots" >> "$GITHUB_ENV"
+          echo "REVIEW_VIDEO_PATH=$ASSET_DIR/review-video.mp4" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/empty-metadata"
+          echo "EMPTY_METADATA_PATH=$RUNNER_TEMP/empty-metadata" >> "$GITHUB_ENV"
+
+      - name: Comprobar credenciales
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in APPLE_API_PRIVATE_KEY APPLE_API_KEY_ID APPLE_API_ISSUER_ID APP_STORE_ASSET_KEY; do
+            test -n "${!name:-}" || { echo "Falta el secreto $name" >&2; exit 1; }
+          done
+
+      - name: Sustituir capturas, adjuntar vídeo y enviar
+        run: fastlane ios submit_review
+
+      - name: Limpiar archivos temporales
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/app-store-assets" "$RUNNER_TEMP/app-store-assets.zip" "$RUNNER_TEMP/empty-metadata"

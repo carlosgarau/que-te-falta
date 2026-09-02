@@ -1,0 +1,36 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Sustituye recursos finales, selecciona la compilación 9 y envía la versión 1.0"
+  lane :submit_review do
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPLE_API_KEY_ID"),
+      issuer_id: ENV.fetch("APPLE_API_ISSUER_ID"),
+      key_content: ENV.fetch("APPLE_API_PRIVATE_KEY"),
+      duration: 1200,
+      in_house: false
+    )
+
+    deliver(
+      api_key: api_key,
+      app: 6800699896,
+      app_identifier: "com.carlosgarau.lacompra",
+      app_version: "1.0",
+      build_number: "9",
+      platform: "ios",
+      screenshots_path: ENV.fetch("SCREENSHOTS_PATH"),
+      metadata_path: ENV.fetch("EMPTY_METADATA_PATH"),
+      app_review_attachment_file: ENV.fetch("REVIEW_VIDEO_PATH"),
+      overwrite_screenshots: true,
+      skip_binary_upload: true,
+      skip_metadata: false,
+      submit_for_review: true,
+      automatic_release: false,
+      force: true,
+      run_precheck_before_submit: false,
+      submission_information: {
+        export_compliance_uses_encryption: false
+      }
+    )
+  end
+end
