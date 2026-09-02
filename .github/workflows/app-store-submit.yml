@@ -38,10 +38,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet cryptography
+          python3 -m venv "$RUNNER_TEMP/asset-venv"
+          "$RUNNER_TEMP/asset-venv/bin/pip" install --quiet cryptography
           export ASSET_ARCHIVE="$RUNNER_TEMP/app-store-assets.zip"
           export ASSET_DIR="$RUNNER_TEMP/app-store-assets"
-          python3 - <<'PY'
+          "$RUNNER_TEMP/asset-venv/bin/python" - <<'PY'
           import os
           from pathlib import Path
           from cryptography.fernet import Fernet
@@ -74,4 +75,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -rf "$RUNNER_TEMP/app-store-assets" "$RUNNER_TEMP/app-store-assets.zip" "$RUNNER_TEMP/empty-metadata"
+          rm -rf "$RUNNER_TEMP/app-store-assets" "$RUNNER_TEMP/app-store-assets.zip" "$RUNNER_TEMP/empty-metadata" "$RUNNER_TEMP/asset-venv"
