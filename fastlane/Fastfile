@@ -1,5 +1,27 @@
 default_platform(:ios)
 
+# Fastlane 2.238.0 conoce READY_FOR_REVIEW, pero todavía no lo considera
+# editable al buscar la versión de App Store Connect.
+module ReadyForReviewEditVersion
+  def get_edit_app_store_version(client: nil, platform: nil, includes: Spaceship::ConnectAPI::AppStoreVersion::ESSENTIAL_INCLUDES)
+    version = super
+    return version if version
+
+    client ||= Spaceship::ConnectAPI
+    platform ||= Spaceship::ConnectAPI::Platform::IOS
+    filter = {
+      appVersionState: Spaceship::ConnectAPI::AppStoreVersion::AppVersionState::READY_FOR_REVIEW,
+      platform: platform
+    }
+
+    get_app_store_versions(client: client, filter: filter, includes: includes)
+      .sort_by { |candidate| Gem::Version.new(candidate.version_string) }
+      .last
+  end
+end
+
+Spaceship::ConnectAPI::App.prepend(ReadyForReviewEditVersion)
+
 platform :ios do
   desc "Sustituye recursos finales, selecciona la compilación 9 y envía la versión 1.0"
   lane :submit_review do
@@ -29,6 +51,7 @@ platform :ios do
       automatic_release: false,
       force: true,
       run_precheck_before_submit: false,
+      version_check_wait_retry_limit: 1,
       submission_information: {
         export_compliance_uses_encryption: false
       }
