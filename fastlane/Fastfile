@@ -23,6 +23,7 @@ platform :ios do
       app_review_attachment_file: ENV.fetch("REVIEW_VIDEO_PATH"),
       overwrite_screenshots: true,
       skip_binary_upload: true,
+      skip_app_version_update: true,
       skip_metadata: false,
       submit_for_review: true,
       automatic_release: false,
