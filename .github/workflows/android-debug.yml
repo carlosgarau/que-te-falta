@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar aplicación
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Preparar pnpm
         uses: pnpm/action-setup@v4
@@ -35,13 +35,13 @@ jobs:
           version: 11.16.0
 
       - name: Preparar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
 
       - name: Preparar Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -58,7 +58,9 @@ jobs:
 
       - name: Compilar APK de prueba
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
