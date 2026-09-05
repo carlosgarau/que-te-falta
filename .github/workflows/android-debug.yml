@@ -53,6 +53,13 @@ jobs:
       - name: Comprobar la aplicación
         run: pnpm check
 
+      - name: Configurar Firebase Android
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON"
+          printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
       - name: Sincronizar Android
         run: pnpm android:sync
 
