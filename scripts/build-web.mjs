@@ -35,4 +35,4 @@ if (!html.includes('src="./native-bridge.mjs"')) {
 }
 await writeFile(resolve(output, "index.html"), html, "utf8");
 
-console.log(`Aplicación iOS preparada en ${output}`);
+console.log(`Aplicación móvil preparada en ${output}`);

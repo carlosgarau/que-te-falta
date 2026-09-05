@@ -33,6 +33,9 @@ importers:
         specifier: 8.1.10
         version: 8.1.10(@capacitor/core@8.5.0)
     devDependencies:
+      '@capacitor/android':
+        specifier: 8.5.0
+        version: 8.5.0(@capacitor/core@8.5.0)
       '@capacitor/cli':
         specifier: 8.5.0
         version: 8.5.0(supports-color@5.5.0)
@@ -50,6 +53,11 @@ packages:
     peerDependenciesMeta:
       firebase:
         optional: true
+
+  '@capacitor/android@8.5.0':
+    resolution: {integrity: sha512-Rb3prJeQiTp0pQhSSOReJuG9VgibOGMG4ECs+UhMwr6TCCHZ3NCZO811bDA0HxD0xrT/gCrJAsY5yfEATu84JQ==}
+    peerDependencies:
+      '@capacitor/core': ^8.5.0
 
   '@capacitor/app@8.1.1':
     resolution: {integrity: sha512-xM2ZTX5jK60tFtmjsmJv+Cdj1Qsb6NcavkqmdEnCPQBeya9oKhamZJxYOnQNj1ZvcJM7sWfG6BEtSLx42pisbA==}
@@ -142,6 +150,7 @@ packages:
   '@xmldom/xmldom@0.9.10':
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
     engines: {node: '>=14.6'}
+    deprecated: this version has critical issues, please update to the latest version
 
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
@@ -488,6 +497,10 @@ packages:
 snapshots:
 
   '@capacitor-firebase/authentication@8.2.0(@capacitor/core@8.5.0)':
+    dependencies:
+      '@capacitor/core': 8.5.0
+
+  '@capacitor/android@8.5.0(@capacitor/core@8.5.0)':
     dependencies:
       '@capacitor/core': 8.5.0
 

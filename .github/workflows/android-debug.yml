@@ -1,0 +1,78 @@
+name: Comprobar Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/android
+    paths:
+      - "android/**"
+      - "*.html"
+      - "*.css"
+      - "*.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "capacitor.config.json"
+      - "scripts/**"
+      - ".github/workflows/android-debug.yml"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar aplicación
+        uses: actions/checkout@v5
+
+      - name: Preparar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Preparar Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Comprobar la aplicación
+        run: pnpm check
+
+      - name: Configurar Firebase Android
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON"
+          printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
+      - name: Sincronizar Android
+        run: pnpm android:sync
+
+      - name: Compilar APK de prueba
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: que-te-falta-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
