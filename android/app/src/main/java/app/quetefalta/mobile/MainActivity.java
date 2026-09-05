@@ -1,4 +1,4 @@
-package com.carlosgarau.lacompra;
+package app.quetefalta.mobile;
 
 import com.getcapacitor.BridgeActivity;
 

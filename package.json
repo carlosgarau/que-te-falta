@@ -14,8 +14,8 @@
     "ios:add": "node scripts/build-web.mjs && cap add ios",
     "ios:sync": "node scripts/build-web.mjs && cap sync ios",
     "ios:open": "cap open ios",
-    "android:add": "node scripts/build-web.mjs && cap add android",
-    "android:sync": "node scripts/build-web.mjs && cap sync android",
+    "android:add": "node scripts/build-web.mjs && cap add android && node scripts/finalize-android.mjs",
+    "android:sync": "node scripts/build-web.mjs && cap sync android && node scripts/finalize-android.mjs",
     "android:open": "cap open android"
   },
   "dependencies": {

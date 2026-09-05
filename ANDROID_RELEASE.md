@@ -1,6 +1,6 @@
 # Preparación de Android
 
-La aplicación Android reutiliza la misma interfaz, datos y lógica que las versiones web e iOS. El identificador técnico es `com.carlosgarau.lacompra` y el nombre visible es «¿Qué te falta?».
+La aplicación Android reutiliza la misma interfaz, datos y lógica que las versiones web e iOS. El identificador técnico neutral es `app.quetefalta.mobile` y el nombre visible es «¿Qué te falta?».
 
 ## Estado técnico
 
@@ -13,7 +13,7 @@ La aplicación Android reutiliza la misma interfaz, datos y lógica que las vers
 
 ## Firebase y acceso con Google
 
-Antes de probar el inicio de sesión nativo hay que registrar en el proyecto Firebase `la-compra-familiar` una aplicación Android con el paquete `com.carlosgarau.lacompra`.
+Antes de probar el inicio de sesión nativo hay que registrar en el proyecto Firebase `la-compra-familiar` una aplicación Android con el paquete `app.quetefalta.mobile`.
 
 Después, descarga `google-services.json` y colócalo en:
 
