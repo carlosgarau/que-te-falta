@@ -1,6 +1,6 @@
 # ¿Qué te falta?
 
-Lista familiar para iPhone y web, pensada para usarla con una mano o mediante la voz.
+Lista familiar para iPhone, Android y web, pensada para usarla con una mano o mediante la voz.
 
 ## Funciones principales
 
@@ -10,7 +10,7 @@ Lista familiar para iPhone y web, pensada para usarla con una mano o mediante la
 - Mantiene listas puntuales independientes, por ejemplo «Navidad».
 - Controla caducidades, avisa 3 días y 1 día antes y recomienda congelar cuando corresponde.
 - Lee la lista en voz alta y entiende órdenes como «¿qué hay en la lista?».
-- Comparte la lista familiar o una lista puntual mediante la hoja nativa de iOS, incluido WhatsApp.
+- Comparte la lista familiar o una lista puntual mediante la hoja nativa del móvil, incluido WhatsApp.
 - Inicia sesión con Google o Apple solo cuando quieras compartir y sincronizar.
 - Da acceso a cada lista por separado y permite consultar o retirar miembros.
 - Funciona sin cuenta para uso personal: los datos locales permanecen en el dispositivo.
@@ -32,7 +32,7 @@ La regla de aceptación fija al invitado como editor; una invitación nunca pued
 
 ## Desarrollo
 
-Requisitos: Node.js, pnpm y, para compilar iOS, macOS con Xcode 26 o posterior.
+Requisitos: Node.js y pnpm. Para compilar iOS hace falta macOS con Xcode 26 o posterior; para Android, Android Studio con JDK 21.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -42,7 +42,14 @@ pnpm ios:sync
 pnpm ios:open
 ```
 
-`pnpm build:web` crea `www/`, la versión empaquetada dentro de la aplicación. El proyecto nativo está en `ios/App/App.xcodeproj`.
+Para Android:
+
+```bash
+pnpm android:sync
+pnpm android:open
+```
+
+`pnpm build:web` crea `www/`, la versión empaquetada dentro de la aplicación. Los proyectos nativos están en `ios/App/App.xcodeproj` y `android/`.
 
 ## Siri y Atajos
 
@@ -65,5 +72,6 @@ https://carlosgarau.github.io/que-te-falta/?command=ORDEN_CODIFICADA
 - [Respuestas de App Store Connect](APP_STORE_CONNECT_ANSWERS.md)
 - [Plan de capturas](APP_STORE_SCREENSHOTS.md)
 - [Checklist de activación](APP_STORE_ACTIVATION_CHECKLIST.md)
+- [Preparación y publicación en Android](ANDROID_RELEASE.md)
 - [Política de privacidad](privacy.html)
 - [Ayuda y contacto](support.html)

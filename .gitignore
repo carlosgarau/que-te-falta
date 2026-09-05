@@ -16,3 +16,8 @@ ios/App/App.xcodeproj/xcuserdata/
 app-store-screenshots/
 PARA-SUBIR-A-APPLE/
 PARA-SUBIR-A-APPLE-6.9/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/build/
+android/app/google-services.json
