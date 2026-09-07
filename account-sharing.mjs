@@ -1,3 +1,5 @@
+import { AccountStateWriter } from "./account-state-writer.mjs";
+
 const FIREBASE_WEB_VERSION = "11.10.0";
 const FIREBASE_CONFIG = Object.freeze({
   apiKey: "AIzaSyA29DqSnfWX9ueuLC13B0sP8ln5j-5kVD4",
@@ -174,15 +176,22 @@ function databaseError(response) {
   return error;
 }
 
-async function databaseRequest(path, options = {}) {
+async function databaseRequest(path, { withETag = false, allowConflict = false, ...options } = {}) {
   let response = await authenticatedDatabaseResponse(path, options);
   if (response.status === 401) response = await authenticatedDatabaseResponse(path, options, true);
+  if (allowConflict && response.status === 412) return false;
   if (!response.ok) {
     throw databaseError(response);
   }
   if (response.status === 204) return null;
-  return response.json();
+  const data = await response.json();
+  return withETag ? { state: data || {}, etag: response.headers.get("ETag") } : data;
 }
+
+const accountWriter = new AccountStateWriter({
+  read: (id) => databaseRequest(`lists/${encodePathPart(id)}/state`, { withETag: true, headers: { "X-Firebase-ETag": "true" } }),
+  write: (id, state, etag) => databaseRequest(`lists/${encodePathPart(id)}/state`, { method: "PUT", body: state, headers: { "if-match": etag }, allowConflict: true }),
+});
 
 export function accountInviteFromUrl(value) {
   try {
@@ -345,11 +354,17 @@ export async function ensureFamilyAccountList(localState, selection = {}) {
 }
 
 export async function getAccountList(listId) {
-  return databaseRequest(`lists/${encodePathPart(listId)}`);
+  const list = await databaseRequest(`lists/${encodePathPart(listId)}`);
+  if (list?.state) accountWriter.observe(listId, list.state);
+  return list;
 }
 
 export async function updateAccountListState(listId, state) {
-  await databaseRequest(`lists/${encodePathPart(listId)}/state`, { method: "PUT", body: state });
+  const saved = await accountWriter.update(listId, state);
+  const list = await getAccountList(listId);
+  // Editors may update products, but Firebase only lets the owner rename or
+  // update list metadata. Do not report a successful save as an offline error.
+  if (list?.meta?.ownerId !== accountUser?.uid) return saved;
   if (state?.name) {
     await databaseRequest(`lists/${encodePathPart(listId)}/meta/name`, {
       method: "PUT",
@@ -357,6 +372,7 @@ export async function updateAccountListState(listId, state) {
     });
   }
   await databaseRequest(`lists/${encodePathPart(listId)}/meta/updatedAt`, { method: "PUT", body: Date.now() });
+  return saved;
 }
 
 export async function mergeIntoAccountListState(listId, incomingState, mergeStates, maxAttempts = 5) {
@@ -409,7 +425,7 @@ export function subscribeAccountList(listId, { onState = () => {}, onStatus = ()
   const refresh = async () => {
     try {
       const list = await getAccountList(listId);
-      if (list?.state) onState(list.state, list);
+      if (list?.state && accountWriter.observe(listId, list.state)) onState(list.state, list);
       onStatus("synced");
       return list;
     } catch (error) {
@@ -428,7 +444,7 @@ export function subscribeAccountList(listId, { onState = () => {}, onStatus = ()
       try {
         const message = JSON.parse(event.data);
         const list = message.path === "/" ? message.data : null;
-        if (list?.state) onState(list.state, list);
+        if (list?.state && accountWriter.observe(listId, list.state)) onState(list.state, list);
         else refresh().catch(() => {});
       } catch {
         refresh().catch(() => {});

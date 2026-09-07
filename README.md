@@ -55,6 +55,8 @@ pnpm android:open
 
 ## Siri y Atajos
 
+La próxima actualización incorpora una acción nativa: «Oye Siri, añade patatas en Qué te falta», sin crear atajos manuales. Requiere iOS 16, sesión iniciada y conexión. Consulta [comportamiento y prueba en iPhone](SIRI_RELEASE.md).
+
 La aplicación iOS acepta órdenes mediante el esquema:
 
 ```text
