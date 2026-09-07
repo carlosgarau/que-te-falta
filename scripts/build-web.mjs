@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildSiriBundle } from "./siri-bundle.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const output = resolve(root, "www");
@@ -13,6 +14,7 @@ const assets = [
   "apple-touch-icon.png",
   "app.mjs",
   "account-sharing.mjs",
+  "account-state-writer.mjs",
   "core.mjs",
   "family-sync.mjs",
   "secure-sharing.mjs",
@@ -34,5 +36,6 @@ if (!html.includes('src="./native-bridge.mjs"')) {
   throw new Error("No se ha podido preparar la entrada nativa de index.html");
 }
 await writeFile(resolve(output, "index.html"), html, "utf8");
+await writeFile(resolve(output, "siri-core.js"), await buildSiriBundle(new URL("../", import.meta.url)), "utf8");
 
 console.log(`Aplicación móvil preparada en ${output}`);

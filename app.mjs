@@ -283,12 +283,11 @@ function saveState({ sync = true } = {}) {
 function scheduleAccountPrimarySync(delay = 350) {
   if (!accountPrimaryList || !accountUser) return;
   clearTimeout(accountWriteTimer);
-  accountWriteTimer = setTimeout(() => {
-    accountWriteTimer = null;
-    updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
-      .then(() => setAccountStatus("synced"))
-      .catch(() => setAccountStatus("offline"));
-  }, delay);
+  accountWriteTimer = null;
+  // Capture the edit before an incoming Siri/server event can replace it.
+  updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
+    .then(() => accountPrimarySync?.refresh())
+    .catch(() => setAccountStatus("offline"));
 }
 
 function cleanListName(value, fallback = "Lista especial") {
@@ -779,6 +778,7 @@ async function initializeAccountDataInternal(preferredListId = "") {
     role: remoteList?.members?.[accountUser.uid]?.role || selected.role || "editor",
   };
   localStorage.setItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`, accountPrimaryList.id);
+  NATIVE.setSiriPrimaryList?.(accountUser.uid, accountPrimaryList.id).catch(() => {});
 
   const migrationKey = `${ACCOUNT_MIGRATION_KEY_PREFIX}${accountUser.uid}:${accountPrimaryList.id}`;
   const needsMigration = !localStorage.getItem(migrationKey);
