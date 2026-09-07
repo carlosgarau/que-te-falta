@@ -64,6 +64,7 @@ struct AddShoppingProduct: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        let initialUid = try await SiriShoppingStore.readyUser().uid
         let lists = try await SiriShoppingStore.lists()
         guard !lists.isEmpty else { throw SiriShoppingError(message: "Abre Qué te falta y crea o acepta una lista antes de añadir productos con Siri.") }
         let target: ShoppingListEntity
@@ -80,7 +81,8 @@ struct AddShoppingProduct: AppIntent {
         var conflicts = 0
         // Re-read after each spoken confirmation: a family member may have
         // changed the quantity or removed access while Siri was listening.
-        while conflicts < 4 {
+        while conflicts < 4 && approved.count < 40 {
+            guard try SiriShoppingStore.user().uid == initialUid else { throw SiriShoppingError(message: "La sesión ha cambiado. Vuelve a pedir el producto.") }
             let snapshot = try await SiriShoppingStore.read(listId: target.id)
             let plan = try SiriShoppingStore.plan(snapshot: snapshot, text: product.id, approved: approved, requestId: requestId)
             if let duplicate = plan.duplicates.first {

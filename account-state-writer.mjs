@@ -68,7 +68,10 @@ export class AccountStateWriter {
         const merged = mergeStateEdits(base ?? latest.state, local, latest.state);
         const result = await this.write(id, merged, latest.etag);
         if (result === false) continue;
-        record.base = clone(merged);
+        // The screen still shows 'local' until the next subscription delivery.
+        // A second tap before that delivery must not treat unseen Siri items as
+        // user deletions. Only observe() advances the displayed server base.
+        record.base = clone(local);
         return merged;
       }
       throw new Error("La lista está cambiando en otro dispositivo. Vuelve a intentarlo");

@@ -138,3 +138,17 @@ test("Rapid queued increments are applied once and failed writes are not replaye
   assert.equal(calls, 1);
   assert.deepEqual(results.map((result) => result.status), ["rejected", "rejected"]);
 });
+
+test("A tap before the updated screen arrives cannot delete an unseen Siri addition", async () => {
+  let remote = add().state;
+  const writer = new AccountStateWriter({ read: async () => ({ state: structuredClone(remote), etag: "1" }), write: async (id, state) => { remote = state; return true; } });
+  writer.observe("list", remote);
+  const local = structuredClone(remote);
+  remote = add(remote, "leche", [], "unseen").state;
+  local.items[0].quantity = 2;
+  await writer.update("list", local);
+  local.items[0].quantity = 3;
+  await writer.update("list", local);
+  assert.equal(remote.items[0].quantity, 3);
+  assert.equal(remote.items[1].key, "leche");
+});

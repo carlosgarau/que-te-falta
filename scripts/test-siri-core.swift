@@ -7,6 +7,7 @@ context.evaluateScript(try String(contentsOfFile: "www/siri-core.js", encoding: 
 precondition(context.exception == nil, "The Siri bundle must load in JavaScriptCore")
 let result = context.evaluateScript("SiriShopping.planSiriAddition({}, 'dos kilos de patatas', [], 'native-test', 1780000000000)")!
 precondition(context.exception == nil)
+precondition(JSONSerialization.isValidJSONObject(result.objectForKeyedSubscript("state")!.toDictionary()!))
 let items = result.objectForKeyedSubscript("state")!.objectForKeyedSubscript("items")!
 precondition(items.atIndex(0)!.objectForKeyedSubscript("key")!.toString() == "patata")
 precondition(items.atIndex(0)!.objectForKeyedSubscript("quantity")!.toInt32() == 2)
