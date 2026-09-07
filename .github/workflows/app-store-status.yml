@@ -27,5 +27,5 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Publicar la versión aprobada
-        run: node scripts/release-app-store-version.mjs
+      - name: Consultar App Store Connect
+        run: node scripts/check-app-store-status.mjs
