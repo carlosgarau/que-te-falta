@@ -55,6 +55,7 @@ const statusNames = {
   PREPARE_FOR_SUBMISSION: "En preparación",
   PROCESSING_FOR_DISTRIBUTION: "Procesando para distribución",
   READY_FOR_DISTRIBUTION: "Lista para distribución",
+  READY_FOR_SALE: "Disponible en el App Store",
   READY_FOR_REVIEW: "Lista para enviar a revisión",
   REJECTED: "Rechazada",
   WAITING_FOR_EXPORT_COMPLIANCE: "Pendiente de cumplimiento de exportación",
