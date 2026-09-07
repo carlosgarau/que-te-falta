@@ -1,5 +1,9 @@
 node_modules/
 www/
+.tools/
+*.jks
+*.keystore
+*.p12
 .pnpm-local/
 *.log
 .DS_Store

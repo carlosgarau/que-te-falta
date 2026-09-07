@@ -43,8 +43,13 @@ Desde Android Studio se puede ejecutar en un teléfono o emulador. En Windows ta
 
 1. Crear y verificar la cuenta de Google Play Console.
 2. Reservar la ficha «¿Qué te falta?» y completar contacto, privacidad y seguridad de datos.
-3. Crear una clave de firma de publicación y guardarla fuera del repositorio.
-4. Añadir `google-services.json` y las huellas SHA de las claves a Firebase.
-5. Probar voz, notificaciones, compartir, sincronización y acceso con Google en un Android real.
-6. Generar un Android App Bundle (`.aab`) firmado y subirlo primero a pruebas internas.
-7. Preparar icono, gráfico destacado y capturas de teléfono Android.
+3. Añadir a Firebase las huellas SHA de las claves de subida y de firma de Play.
+4. Probar voz, notificaciones, compartir, sincronización y acceso con Google en un Android real.
+5. Subir el Android App Bundle (`.aab`) firmado primero a pruebas internas.
+6. Preparar icono, gráfico destacado y capturas de teléfono Android.
+
+## Publicación automatizada
+
+La acción manual «Preparar Android para Google Play» genera un `.aab` firmado de la versión 1.0.2. La clave privada se conserva fuera del repositorio y GitHub solo recibe una copia cifrada como secreto.
+
+Cuando exista la aplicación en Play Console y esté preparada la cuenta de servicio, añade el secreto `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` y ejecuta la misma acción con `upload_to_play=true` para subirla como borrador a pruebas internas.
