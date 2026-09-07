@@ -64,7 +64,7 @@ async function removeSpeechListeners() {
 async function startSpeechRecognition({ onPartial, onStopped, onError }) {
   if (!SpeechRecognition) throw new Error("El reconocimiento de voz no está disponible");
   const availability = await SpeechRecognition.available();
-  if (!availability.available) throw new Error("Este iPhone no permite reconocimiento de voz");
+  if (!availability.available) throw new Error("Este dispositivo no permite reconocimiento de voz");
   let permission = await SpeechRecognition.checkPermissions();
   if (permission.speechRecognition !== "granted") {
     permission = await SpeechRecognition.requestPermissions();

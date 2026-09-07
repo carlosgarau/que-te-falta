@@ -1,0 +1,153 @@
+name: Preparar Android para Google Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: "Código entero de versión Android"
+        required: true
+        default: "2"
+        type: string
+      upload_to_play:
+        description: "Subir el AAB a pruebas internas de Google Play"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: que-te-falta-android-release
+  cancel-in-progress: false
+
+jobs:
+  release-aab:
+    name: Firmar y preparar Google Play
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: google-play
+    env:
+      ANDROID_VERSION_NAME: "1.0.2"
+      ANDROID_VERSION_CODE: ${{ inputs.version_code }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+
+    steps:
+      - name: Descargar la aplicación
+        uses: actions/checkout@v5
+
+      - name: Preparar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Preparar Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Instalar y comprobar
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm check
+
+      - name: Configurar Firebase Android
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+        run: |
+          set -euo pipefail
+          test -n "$GOOGLE_SERVICES_JSON"
+          printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
+      - name: Preparar la aplicación Android
+        run: pnpm android:sync
+
+      - name: Instalar la clave de subida
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            test -n "${!name:-}" || { echo "Falta el secreto $name" >&2; exit 1; }
+          done
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/que-te-falta-upload.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
+          echo "ANDROID_KEYSTORE_PATH=$ANDROID_KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Crear Android App Bundle firmado
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew bundleRelease --no-daemon
+
+      - name: Verificar la firma
+        shell: bash
+        run: |
+          set -euo pipefail
+          AAB_PATH="android/app/build/outputs/bundle/release/app-release.aab"
+          test -s "$AAB_PATH"
+          jarsigner -verify -strict "$AAB_PATH"
+          echo "AAB_PATH=$AAB_PATH" >> "$GITHUB_ENV"
+
+      - name: Guardar AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: que-te-falta-android-${{ env.ANDROID_VERSION_NAME }}-${{ env.ANDROID_VERSION_CODE }}
+          path: ${{ env.AAB_PATH }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Preparar credencial de Google Play
+        if: ${{ inputs.upload_to_play }}
+        shell: bash
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          test -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
+          PLAY_JSON="$RUNNER_TEMP/google-play-service-account.json"
+          printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" > "$PLAY_JSON"
+          chmod 600 "$PLAY_JSON"
+          echo "PLAY_JSON=$PLAY_JSON" >> "$GITHUB_ENV"
+
+      - name: Preparar fastlane
+        if: ${{ inputs.upload_to_play }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Instalar fastlane
+        if: ${{ inputs.upload_to_play }}
+        run: gem install fastlane --no-document
+
+      - name: Subir a pruebas internas
+        if: ${{ inputs.upload_to_play }}
+        run: |
+          fastlane supply \
+            --aab "$AAB_PATH" \
+            --track internal \
+            --release_status draft \
+            --json_key "$PLAY_JSON" \
+            --package_name app.quetefalta.mobile \
+            --skip_upload_metadata true \
+            --skip_upload_images true \
+            --skip_upload_screenshots true
+
+      - name: Limpiar credenciales temporales
+        if: always()
+        shell: bash
+        run: |
+          rm -f "${ANDROID_KEYSTORE_PATH:-}" "${PLAY_JSON:-}" android/app/google-services.json
