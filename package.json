@@ -6,8 +6,8 @@
   "type": "module",
   "description": "Lista familiar para web, iPhone y Android.",
   "scripts": {
-    "test": "node --test tests.mjs",
-    "check": "node --check app.mjs && node --check account-sharing.mjs && node --check family-sync.mjs && node --check secure-sharing.mjs && node --check native-bridge.mjs && node --test tests.mjs",
+    "test": "node --test tests.mjs tests-siri.mjs",
+    "check": "node --check app.mjs && node --check account-sharing.mjs && node --check family-sync.mjs && node --check secure-sharing.mjs && node --check native-bridge.mjs && node --test tests.mjs tests-siri.mjs",
     "check:app-store": "node scripts/validate-app-store.mjs",
     "firebase:deploy:rules": "pnpm dlx firebase-tools@15.27.0 deploy --only database",
     "build:web": "node scripts/build-web.mjs",

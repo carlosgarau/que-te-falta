@@ -66,6 +66,7 @@ import {
   listAccountMemberships,
   makeAccountInviteUrl,
   mergeAccountState,
+  observeAccountState,
   removeListMember,
   saveAccountProfile,
   signInWithAccount,
@@ -280,15 +281,14 @@ function saveState({ sync = true } = {}) {
   scheduleNativeExpirationNotifications();
 }
 
-function scheduleAccountPrimarySync(delay = 350) {
+function scheduleAccountPrimarySync() {
   if (!accountPrimaryList || !accountUser) return;
   clearTimeout(accountWriteTimer);
-  accountWriteTimer = setTimeout(() => {
-    accountWriteTimer = null;
-    updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
-      .then(() => setAccountStatus("synced"))
-      .catch(() => setAccountStatus("offline"));
-  }, delay);
+  accountWriteTimer = null;
+  // Capture the edit before an incoming Siri/server event can replace it.
+  updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
+    .then(() => accountPrimarySync?.refresh())
+    .catch(() => setAccountStatus("offline"));
 }
 
 function cleanListName(value, fallback = "Lista especial") {
@@ -730,6 +730,7 @@ async function initializeAccountSpecialMembership(membership) {
   if (!membership?.id || accountSpecialSyncs.has(membership.id)) return;
   const remoteList = await getAccountList(membership.id);
   if (!remoteList?.state) return;
+  observeAccountState(membership.id, remoteList.state);
   let local = state.specialLists.find((entry) => entry.accountListId === membership.id);
   if (!local) {
     local = {
@@ -773,12 +774,14 @@ async function initializeAccountDataInternal(preferredListId = "") {
   const selected = await ensureFamilyAccountList(state, storedId);
   accountMemberships = await listAccountMemberships();
   const remoteList = await getAccountList(selected.id);
+  observeAccountState(selected.id, remoteList?.state || {});
   accountPrimaryList = {
     id: selected.id,
     name: remoteList?.meta?.name || selected.name || "Mi lista familiar",
     role: remoteList?.members?.[accountUser.uid]?.role || selected.role || "editor",
   };
   localStorage.setItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`, accountPrimaryList.id);
+  NATIVE.setSiriPrimaryList?.(accountUser.uid, accountPrimaryList.id).catch(() => {});
 
   const migrationKey = `${ACCOUNT_MIGRATION_KEY_PREFIX}${accountUser.uid}:${accountPrimaryList.id}`;
   const needsMigration = !localStorage.getItem(migrationKey);
@@ -916,6 +919,7 @@ async function onAccountAuthChanged(user) {
   renderAccountIdentity();
   renderFamilySharing();
   if (!user) {
+    NATIVE.setSiriPrimaryList?.("", "").catch(() => {});
     stopAccountDataSync();
     return;
   }
