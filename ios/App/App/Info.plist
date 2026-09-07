@@ -43,6 +43,10 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>¿Qué te falta? usa el micrófono solo cuando pulsas el botón para añadir productos mediante la voz.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>¿Qué te falta? usa la cámara únicamente cuando eliges añadir una foto a un producto.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>¿Qué te falta? permite elegir una foto para identificar mejor un producto de tu lista.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>¿Qué te falta? convierte en texto los productos que dictas para añadirlos a tu lista.</string>
 	<key>LSRequiresIPhoneOS</key>

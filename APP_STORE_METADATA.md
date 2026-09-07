@@ -23,6 +23,8 @@ Tu lista familiar de casa: compartida, ordenada por familias, con voz y avisos p
 
 Añade productos escribiendo o hablando, consulta la lista en voz alta y llévala agrupada por familias para ir tachando en el supermercado. Si un producto ya estaba apuntado, la app te pregunta si quieres aumentar la cantidad.
 
+Toca un producto para editar su nombre, cantidad o familia. Si necesitas una marca, un tamaño o un envase concreto, puedes añadir una foto opcional para que las demás personas de la lista sepan exactamente cuál comprar.
+
 Comparte la lista familiar o una lista puntual —por ejemplo, Navidad— desde la hoja de compartir de iOS. La persona invitada inicia sesión y recibe acceso únicamente a esa lista. Puedes consultar los miembros y retirar su acceso en cualquier momento.
 
 También puedes registrar alimentos delicados, aunque no estuvieran en la lista. La app guarda su fecha de caducidad y programa avisos 3 días y 1 día antes. Cuando queda poco tiempo, pregunta si ya se ha consumido y recomienda congelarlo si ese alimento lo permite.
@@ -34,6 +36,7 @@ Funciones destacadas:
 - Listas puntuales independientes y compartibles.
 - Productos agrupados por familias.
 - Cantidades y detección de repetidos.
+- Edición de productos y fotos opcionales para identificarlos.
 - Historial de compras y sugerencias basadas en compras anteriores.
 - Control de caducidad con notificaciones locales.
 - Sin publicidad, analítica ni seguimiento.
@@ -46,6 +49,18 @@ Funciones destacadas:
 ## Novedades de la versión 1.0
 
 Primera versión para iPhone con listas familiares y puntuales, dictado, lectura en voz alta, control de caducidad, notificaciones y uso compartido privado mediante invitaciones.
+
+## Novedades de la versión 1.0.1
+
+- Corregido el zoom que podía quedar activo después de usar el teclado.
+- Mejorada la detección del estado de conexión de las listas compartidas.
+- Ahora puedes tocar un producto para cambiar su nombre, cantidad o familia.
+- Añade una foto opcional cuando necesites indicar una marca, tamaño o envase concreto.
+
+## Novedades de la versión 1.0.2
+
+- Corregida la conexión autenticada con la lista familiar.
+- Ya puedes crear una invitación, compartir una lista y mantenerla sincronizada entre dispositivos.
 
 ## Notas para App Review
 

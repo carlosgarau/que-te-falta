@@ -22,7 +22,9 @@ import {
   productKey,
   registerPurchase,
   registerRequest,
+  sanitizeProductPhoto,
   updateExpiration,
+  updateShoppingItem,
 } from "./core.mjs";
 import {
   createFamilyId,
@@ -52,6 +54,7 @@ import {
   accountInviteFromUrl,
   accountStateFrom,
   clearAccountInviteFromUrl,
+  makeAuthenticatedDatabaseUrl,
   makeAccountInviteUrl,
   mergeAccountState,
   normalizeAccountUser,
@@ -79,6 +82,48 @@ test("clasifica productos en familias", () => {
   assert.equal(categoryFor("aguacate"), "Fruta y verdura");
   assert.equal(categoryFor("turrón"), "Despensa");
   assert.equal(groupItems([{ category: "Bebidas" }, { category: "Despensa" }]).length, 2);
+});
+
+test("permite editar nombre, cantidad, familia y foto de un producto", () => {
+  const photoDataUrl = "data:image/jpeg;base64,QUJDRA==";
+  const item = {
+    id: "producto-1",
+    key: "tomate",
+    name: "Tomate",
+    category: "Fruta y verdura",
+    quantity: 1,
+    unit: "",
+    checked: false,
+  };
+  updateShoppingItem(item, {
+    name: "Tomate cherry",
+    quantity: 3,
+    category: "Otros",
+    photoDataUrl,
+  }, Date.UTC(2026, 8, 7));
+  assert.equal(item.key, "tomate cherry");
+  assert.equal(item.name, "Tomate cherry");
+  assert.equal(item.quantity, 3);
+  assert.equal(item.category, "Otros");
+  assert.equal(item.photoDataUrl, photoDataUrl);
+  assert.equal(item.updatedAt, "2026-09-07T00:00:00.000Z");
+
+  updateShoppingItem(item, { name: "Tomate cherry", quantity: 0, photoDataUrl: "" });
+  assert.equal(item.quantity, 1);
+  assert.equal(item.category, "Otros");
+  assert.equal("photoDataUrl" in item, false);
+});
+
+test("solo conserva fotos de producto pequeñas y seguras", () => {
+  const photoDataUrl = "data:image/jpeg;base64,QUJDRA==";
+  assert.equal(sanitizeProductPhoto(photoDataUrl), photoDataUrl);
+  assert.equal(sanitizeProductPhoto("javascript:alert(1)"), "");
+  const state = hydrateState({
+    items: [{ id: "1", name: "Leche", photoDataUrl }],
+    specialLists: [{ id: "navidad", name: "Navidad", items: [{ id: "2", name: "Uvas", photoDataUrl: "https://example.com/foto.jpg" }] }],
+  });
+  assert.equal(state.items[0].photoDataUrl, photoDataUrl);
+  assert.equal("photoDataUrl" in state.specialLists[0].items[0], false);
 });
 
 test("reconoce comandos de compra", () => {
@@ -400,6 +445,17 @@ test("crea invitaciones de cuenta sin exponer otra lista", () => {
   assert.equal(new URL(url).searchParams.has("lista"), false);
 });
 
+test("autentica Realtime Database con el token de Firebase en el parámetro auth", () => {
+  const url = new URL(makeAuthenticatedDatabaseUrl(
+    "lists/lista-1",
+    "token+/= con espacios",
+    "https://example.firebaseio.test/",
+  ));
+  assert.equal(url.origin, "https://example.firebaseio.test");
+  assert.equal(url.pathname, "/lists/lista-1.json");
+  assert.equal(url.searchParams.get("auth"), "token+/= con espacios");
+});
+
 test("identifica el proveedor que debe revalidarse al eliminar una cuenta", () => {
   assert.equal(accountProviderForDeletion({ providerId: "apple.com" }), "apple.com");
   assert.equal(accountProviderForDeletion({ providerData: [{ providerId: "google.com" }] }), "google.com");
@@ -481,8 +537,84 @@ test("la interfaz móvil bloquea el desplazamiento lateral involuntario", async 
   const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
   assert.match(styles, /overflow-x: clip/u);
   assert.match(styles, /overscroll-behavior-x: none/u);
+  assert.match(styles, /min-width: 0/u);
   assert.match(styles, /\.list-selector-row \{ align-items: center; flex-wrap: nowrap;/u);
   assert.match(styles, /\.list-switcher \{ flex: 1 1 auto; flex-wrap: wrap; overflow-x: visible;/u);
+});
+
+test("los campos de iPhone no activan el zoom automático al escribir", async () => {
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  assert.match(styles, /-webkit-text-size-adjust: 100%/u);
+  assert.match(styles, /\.quick-add input[^}]*font-size: 16px/u);
+  assert.match(styles, /input:not\(\[type="checkbox"\]\):not\(\[type="file"\]\) \{ font-size: 16px; \}/u);
+  assert.match(app, /function finishQuickAddInput\(input\)[\s\S]*input\.blur\(\)[\s\S]*window\.scrollTo\(\{ top: 0, left: 0/u);
+  assert.match(app, /input\.value = "";\s*finishQuickAddInput\(input\);/u);
+  assert.doesNotMatch(app, /input\.value = "";\s*input\.focus\(\);/u);
+});
+
+test("la versión web renueva la caché con la actualización", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
+  assert.match(index, /styles\.css\?v=33/u);
+  assert.match(index, /app\.mjs\?v=33/u);
+  assert.match(app, /service-worker\.js\?v=33/u);
+  assert.match(worker, /que-te-falta-v33/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=32/u);
+});
+
+test("el editor de producto incluye una foto opcional y permisos claros en iPhone", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const infoPlist = await readFile(new URL("./ios/App/App/Info.plist", import.meta.url), "utf8");
+  const privacy = await readFile(new URL("./privacy.html", import.meta.url), "utf8");
+  assert.match(index, /id="itemEditDialog"/u);
+  assert.match(index, /id="itemEditPhotoInput" type="file" accept="image\/\*"/u);
+  assert.match(app, /async function compressProductPhoto\(file\)/u);
+  assert.match(app, /updateShoppingItem\(item,/u);
+  assert.match(infoPlist, /NSCameraUsageDescription/u);
+  assert.match(infoPlist, /NSPhotoLibraryUsageDescription/u);
+  assert.match(privacy, /Fotos de productos/u);
+});
+
+test("un corte del canal en tiempo real verifica Firebase antes de mostrar sin conexión", async () => {
+  const familySync = await readFile(new URL("./family-sync.mjs", import.meta.url), "utf8");
+  const accountSharing = await readFile(new URL("./account-sharing.mjs", import.meta.url), "utf8");
+  assert.match(familySync, /source\.onerror = \(\) => \{[\s\S]*readRemote\(\)[\s\S]*\.catch\(handleSyncError\)/u);
+  assert.match(accountSharing, /source\.onerror = \(\) => \{[\s\S]*refresh\(\)[\s\S]*\.catch\(\(\) => \{\}\)/u);
+
+  let online = true;
+  let source = null;
+  class FakeEventSource {
+    constructor() {
+      source = this;
+    }
+
+    addEventListener() {}
+    close() {}
+  }
+  const statuses = [];
+  const sync = createFamilySync({
+    databaseUrl: "https://example.test",
+    familyId: "s".repeat(43),
+    deviceId: "iphone",
+    fetchImpl: async () => online
+      ? { ok: true, status: 200, json: async () => ({ state: createInitialState(), updatedAt: 1 }) }
+      : { ok: false, status: 503, json: async () => null },
+    EventSourceImpl: FakeEventSource,
+    onStatus: (status) => statuses.push(status),
+  });
+  await sync.start(createInitialState());
+  source.onerror();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(statuses.at(-1), "synced");
+
+  online = false;
+  source.onerror();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(statuses.at(-1), "offline");
+  sync.stop();
 });
 
 test("la cabecera de voz móvil deja espacio a la lista", async () => {

@@ -6,6 +6,8 @@ Lista familiar para iPhone, Android y web, pensada para usarla con una mano o me
 
 - Añade varios productos con una sola frase y agrúpalos por familias.
 - Detecta repetidos y pregunta si debe aumentar la cantidad.
+- Permite editar el nombre, la cantidad y la familia de cualquier producto.
+- Admite una foto opcional comprimida para aclarar la marca, el tamaño o el envase; se comparte solo con los miembros autorizados de esa lista.
 - Permite tachar productos desde el móvil y conserva el historial real.
 - Mantiene listas puntuales independientes, por ejemplo «Navidad».
 - Controla caducidades, avisa 3 días y 1 día antes y recomienda congelar cuando corresponde.

@@ -8,10 +8,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="¿Qué te falta?" />
     <meta name="description" content="Tu lista familiar, con voz, memoria y sugerencias útiles." />
-    <link rel="manifest" href="manifest.webmanifest?v=30" />
+    <link rel="manifest" href="manifest.webmanifest?v=33" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="stylesheet" href="styles.css?v=30" />
+    <link rel="stylesheet" href="styles.css?v=33" />
     <title>¿Qué te falta?</title>
   </head>
   <body>
@@ -145,6 +145,51 @@
         </button>
       </nav>
     </div>
+
+    <dialog class="app-dialog item-edit-dialog" id="itemEditDialog" aria-labelledby="itemEditTitle">
+      <span class="eyebrow">EDITAR PRODUCTO</span>
+      <h2 id="itemEditTitle">Producto</h2>
+      <p>Cambia lo necesario o añade una foto para que no haya dudas.</p>
+      <form id="itemEditForm">
+        <div class="item-edit-fields">
+          <label>
+            <span>Nombre</span>
+            <input id="itemEditName" type="text" maxlength="80" autocomplete="off" required />
+          </label>
+          <div class="item-edit-row">
+            <label>
+              <span>Cantidad</span>
+              <input id="itemEditQuantity" type="number" min="1" max="99" step="1" inputmode="numeric" required />
+            </label>
+            <label>
+              <span>Familia</span>
+              <select id="itemEditCategory" required></select>
+            </label>
+          </div>
+        </div>
+        <div class="item-photo-editor">
+          <div class="item-photo-preview">
+            <img id="itemEditPhotoPreview" alt="Foto del producto" hidden />
+            <span id="itemEditPhotoEmpty" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 7h4l2-2h4l2 2h4v12H4z"/><circle cx="12" cy="13" r="3"/></svg>
+            </span>
+          </div>
+          <div class="item-photo-copy">
+            <strong>Foto opcional</strong>
+            <small>Útil si necesitas una marca, un tamaño o un envase concreto.</small>
+            <label class="item-photo-picker" id="itemEditPhotoButton">
+              <span id="itemEditPhotoButtonText">Hacer o elegir foto</span>
+              <input id="itemEditPhotoInput" type="file" accept="image/*" />
+            </label>
+            <button class="item-photo-remove" id="itemEditPhotoRemove" type="button" hidden>Quitar foto</button>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button class="primary" id="itemEditSave" type="submit">Guardar cambios</button>
+          <button class="secondary" id="itemEditCancel" type="button">Cancelar</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog class="app-dialog" id="duplicateDialog">
       <div class="dialog-icon duplicate-icon">
@@ -377,7 +422,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script type="module" src="app.mjs?v=30"></script>
+    <script type="module" src="app.mjs?v=33"></script>
   </body>
 </html>
 

@@ -23,8 +23,10 @@ end
 Spaceship::ConnectAPI::App.prepend(ReadyForReviewEditVersion)
 
 platform :ios do
-  desc "Sustituye recursos finales, selecciona la compilación 9 y envía la versión 1.0"
+  desc "Crea la versión 1.0.2, selecciona la compilación 11 y la envía a revisión"
   lane :submit_review do
+    app_version = ENV.fetch("APP_STORE_VERSION", "1.0.2")
+    build_number = ENV.fetch("APP_STORE_BUILD_NUMBER", "11")
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("APPLE_API_KEY_ID"),
       issuer_id: ENV.fetch("APPLE_API_ISSUER_ID"),
@@ -37,23 +39,25 @@ platform :ios do
       api_key: api_key,
       app: 6800699896,
       app_identifier: "com.carlosgarau.lacompra",
-      app_version: "1.0",
-      build_number: "9",
+      app_version: app_version,
+      build_number: build_number,
       platform: "ios",
       screenshots_path: ENV.fetch("SCREENSHOTS_PATH"),
       metadata_path: ENV.fetch("EMPTY_METADATA_PATH"),
       app_review_attachment_file: ENV.fetch("REVIEW_VIDEO_PATH"),
       overwrite_screenshots: true,
       skip_binary_upload: true,
-      skip_app_version_update: true,
-      skip_metadata: true,
+      skip_app_version_update: false,
+      skip_metadata: false,
       skip_screenshots: true,
       submit_for_review: true,
-      automatic_release: false,
+      automatic_release: true,
       force: true,
-      reject_if_possible: true,
+      release_notes: {
+        "es-ES" => "Corrige la conexión con la lista familiar para que puedas crear invitaciones, compartir una lista y mantenerla sincronizada entre dispositivos."
+      },
       run_precheck_before_submit: false,
-      version_check_wait_retry_limit: 1,
+      version_check_wait_retry_limit: 10,
       submission_information: {
         export_compliance_uses_encryption: false
       }

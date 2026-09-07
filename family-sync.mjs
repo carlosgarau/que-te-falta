@@ -195,6 +195,7 @@ export function createFamilySync({
   let pendingState = null;
   let writing = false;
   let latestUpdatedAt = 0;
+  let streamHealthCheck = null;
 
   function setStatus(status) {
     if (!stopped) onStatus(status);
@@ -308,7 +309,13 @@ export function createFamilySync({
     source.addEventListener("open", () => setStatus("synced"));
     source.addEventListener("cancel", () => setStatus("offline"));
     source.addEventListener("auth_revoked", () => setStatus("offline"));
-    source.onerror = () => setStatus("offline");
+    source.onerror = () => {
+      if (streamHealthCheck) return;
+      streamHealthCheck = readRemote()
+        .then(() => setStatus("synced"))
+        .catch(handleSyncError)
+        .finally(() => { streamHealthCheck = null; });
+    };
   }
 
   async function start(localState) {

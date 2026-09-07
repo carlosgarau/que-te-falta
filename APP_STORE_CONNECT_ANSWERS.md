@@ -34,9 +34,13 @@ Valores previstos para la primera versión de **¿Qué te falta?**. Deben copiar
   - Finalidad: mostrar la identidad dentro de la lista compartida.
   - Vinculada con la identidad: sí.
   - Usada para seguimiento: no.
+- Fotos de productos: opcionales, únicamente cuando la persona decide hacer o elegir una foto al editar un producto.
+  - Finalidad: identificar una marca, tamaño o envase dentro de la lista.
+  - Vinculadas con la identidad: sí cuando la lista se comparte mediante una cuenta.
+  - Usadas para seguimiento: no.
 - Teléfono, contactos y ubicación: no se recopilan.
 - Audio: no se almacena; el micrófono se activa únicamente al pulsar el botón de voz.
-- Contenido del usuario: sí, únicamente productos, cantidades, listas y caducidades cuando se activa una lista compartida.
+- Contenido del usuario: sí, únicamente productos, cantidades, listas, caducidades y fotos opcionales cuando se activa una lista compartida.
   - Finalidad: funcionalidad de la aplicación.
   - Vinculado con la identidad: sí cuando se comparte mediante una cuenta.
   - Usado para seguimiento: no.
