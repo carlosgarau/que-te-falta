@@ -145,13 +145,18 @@ async function getIdToken() {
   return webAuth.currentUser.getIdToken();
 }
 
+export function makeAuthenticatedDatabaseUrl(path, token, databaseUrl = FIREBASE_CONFIG.databaseURL) {
+  const url = new URL(`${String(databaseUrl).replace(/\/+$/g, "")}/${path}.json`);
+  url.searchParams.set("auth", String(token || ""));
+  return url.toString();
+}
+
 async function databaseRequest(path, { method = "GET", body } = {}) {
   const token = await getIdToken();
-  const response = await fetch(`${FIREBASE_CONFIG.databaseURL}/${path}.json`, {
+  const response = await fetch(makeAuthenticatedDatabaseUrl(path, token), {
     method,
     headers: {
       Accept: "application/json",
-      Authorization: `Bearer ${token}`,
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     cache: "no-store",

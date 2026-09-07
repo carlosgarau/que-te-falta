@@ -54,6 +54,7 @@ import {
   accountInviteFromUrl,
   accountStateFrom,
   clearAccountInviteFromUrl,
+  makeAuthenticatedDatabaseUrl,
   makeAccountInviteUrl,
   mergeAccountState,
   normalizeAccountUser,
@@ -444,6 +445,17 @@ test("crea invitaciones de cuenta sin exponer otra lista", () => {
   assert.equal(new URL(url).searchParams.has("lista"), false);
 });
 
+test("autentica Realtime Database con el token de Firebase en el parámetro auth", () => {
+  const url = new URL(makeAuthenticatedDatabaseUrl(
+    "lists/lista-1",
+    "token+/= con espacios",
+    "https://example.firebaseio.test/",
+  ));
+  assert.equal(url.origin, "https://example.firebaseio.test");
+  assert.equal(url.pathname, "/lists/lista-1.json");
+  assert.equal(url.searchParams.get("auth"), "token+/= con espacios");
+});
+
 test("identifica el proveedor que debe revalidarse al eliminar una cuenta", () => {
   assert.equal(accountProviderForDeletion({ providerId: "apple.com" }), "apple.com");
   assert.equal(accountProviderForDeletion({ providerData: [{ providerId: "google.com" }] }), "google.com");
@@ -545,11 +557,11 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=32/u);
-  assert.match(index, /app\.mjs\?v=32/u);
-  assert.match(app, /service-worker\.js\?v=32/u);
-  assert.match(worker, /que-te-falta-v32/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=31/u);
+  assert.match(index, /styles\.css\?v=33/u);
+  assert.match(index, /app\.mjs\?v=33/u);
+  assert.match(app, /service-worker\.js\?v=33/u);
+  assert.match(worker, /que-te-falta-v33/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=32/u);
 });
 
 test("el editor de producto incluye una foto opcional y permisos claros en iPhone", async () => {

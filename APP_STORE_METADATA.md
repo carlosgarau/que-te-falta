@@ -57,6 +57,11 @@ Primera versión para iPhone con listas familiares y puntuales, dictado, lectura
 - Ahora puedes tocar un producto para cambiar su nombre, cantidad o familia.
 - Añade una foto opcional cuando necesites indicar una marca, tamaño o envase concreto.
 
+## Novedades de la versión 1.0.2
+
+- Corregida la conexión autenticada con la lista familiar.
+- Ya puedes crear una invitación, compartir una lista y mantenerla sincronizada entre dispositivos.
+
 ## Notas para App Review
 
 La respuesta completa para Guideline 2.1 está preparada en `APP_REVIEW_RESPONSE_2026-08-14.md` con el modelo de iPhone, la versión de iOS y el nombre de la grabación facilitada.

@@ -23,10 +23,10 @@ end
 Spaceship::ConnectAPI::App.prepend(ReadyForReviewEditVersion)
 
 platform :ios do
-  desc "Crea la versión 1.0.1, selecciona la compilación 10 y la envía a revisión"
+  desc "Crea la versión 1.0.2, selecciona la compilación 11 y la envía a revisión"
   lane :submit_review do
-    app_version = ENV.fetch("APP_STORE_VERSION", "1.0.1")
-    build_number = ENV.fetch("APP_STORE_BUILD_NUMBER", "10")
+    app_version = ENV.fetch("APP_STORE_VERSION", "1.0.2")
+    build_number = ENV.fetch("APP_STORE_BUILD_NUMBER", "11")
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("APPLE_API_KEY_ID"),
       issuer_id: ENV.fetch("APPLE_API_ISSUER_ID"),
@@ -54,7 +54,7 @@ platform :ios do
       automatic_release: true,
       force: true,
       release_notes: {
-        "es-ES" => "Corrige el zoom tras usar el teclado y mejora la conexión de las listas compartidas. Ahora también puedes editar el nombre, la cantidad y la familia de un producto, y añadir una foto opcional para identificarlo mejor."
+        "es-ES" => "Corrige la conexión con la lista familiar para que puedas crear invitaciones, compartir una lista y mantenerla sincronizada entre dispositivos."
       },
       run_precheck_before_submit: false,
       version_check_wait_retry_limit: 10,
