@@ -290,6 +290,7 @@ export function subscribeAccountList(listId, { onState = () => {}, onStatus = ()
   let source = null;
   let stopped = false;
   let refreshTimer = null;
+  let streamHealthCheck = null;
 
   const refresh = async () => {
     try {
@@ -321,7 +322,12 @@ export function subscribeAccountList(listId, { onState = () => {}, onStatus = ()
     });
     source.addEventListener("patch", () => refresh().catch(() => {}));
     source.addEventListener("open", () => onStatus("synced"));
-    source.onerror = () => onStatus("offline");
+    source.onerror = () => {
+      if (streamHealthCheck) return;
+      streamHealthCheck = refresh()
+        .catch(() => {})
+        .finally(() => { streamHealthCheck = null; });
+    };
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => connect().catch(() => {}), 50 * 60 * 1000);
   };

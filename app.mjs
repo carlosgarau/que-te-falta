@@ -13,14 +13,17 @@ import {
   isFreezable,
   isPerishable,
   makeItem,
+  MAX_PRODUCT_PHOTO_DATA_URL_LENGTH,
   markExpirationAlerted,
   parseEntry,
   parseSpokenList,
   registerPurchase,
   registerRequest,
   shoppingSummary,
+  sanitizeProductPhoto,
   updateExpiration,
-} from "./core.mjs?v=30";
+  updateShoppingItem,
+} from "./core.mjs?v=32";
 import {
   createFamilyId,
   createFamilySync,
@@ -39,11 +42,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=30";
+} from "./family-sync.mjs?v=32";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=30";
+} from "./secure-sharing.mjs?v=32";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -69,7 +72,7 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=30";
+} from "./account-sharing.mjs?v=32";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -135,6 +138,10 @@ let currentExpirationAlert = null;
 let recognition = null;
 let toastTimer = null;
 let nativeNotificationTimer = null;
+let editingItemId = "";
+let editingItemListId = "";
+let editingItemPhotoDataUrl = "";
+let editingItemPhotoBusy = false;
 let sharedPasswordPrompt = null;
 const unlockingShareIds = new Set();
 
@@ -145,6 +152,24 @@ function updateVisibleViewportHeight() {
 
 updateVisibleViewportHeight();
 window.visualViewport?.addEventListener("resize", updateVisibleViewportHeight);
+
+function finishQuickAddInput(input) {
+  const usesOnscreenKeyboard = NATIVE.isNative
+    || window.innerWidth <= 520
+    || window.matchMedia?.("(pointer: coarse)").matches;
+  if (!usesOnscreenKeyboard) {
+    input.focus();
+    return;
+  }
+
+  input.blur();
+  const restoreViewport = () => {
+    updateVisibleViewportHeight();
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  };
+  window.requestAnimationFrame(restoreViewport);
+  setTimeout(restoreViewport, 350);
+}
 
 function localCaptureMode() {
   if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) return "";
@@ -374,6 +399,141 @@ function impact(style = "light") {
     return;
   }
   navigator.vibrate?.(style === "medium" ? 35 : 20);
+}
+
+function loadProductPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => resolve({ image, objectUrl });
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("No he podido abrir esta imagen"));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function compressProductPhoto(file) {
+  if (!file?.type?.startsWith("image/")) throw new Error("Elige una fotografía");
+  if (file.size > 12_000_000) throw new Error("La foto es demasiado grande");
+  const { image, objectUrl } = await loadProductPhoto(file);
+  try {
+    const naturalWidth = image.naturalWidth || image.width;
+    const naturalHeight = image.naturalHeight || image.height;
+    if (!naturalWidth || !naturalHeight) throw new Error("La foto no tiene un tamaño válido");
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("No he podido preparar la foto");
+    let scale = Math.min(1, 720 / Math.max(naturalWidth, naturalHeight));
+    let quality = 0.74;
+
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      canvas.width = Math.max(1, Math.round(naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(naturalHeight * scale));
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const compressed = sanitizeProductPhoto(canvas.toDataURL("image/jpeg", quality));
+      if (compressed) return compressed;
+      scale *= 0.8;
+      quality = Math.max(0.46, quality - 0.05);
+    }
+    throw new Error(`La foto no ha podido reducirse a menos de ${Math.round(MAX_PRODUCT_PHOTO_DATA_URL_LENGTH / 1_000)} KB`);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function updateItemPhotoPreview() {
+  const photo = sanitizeProductPhoto(editingItemPhotoDataUrl);
+  const preview = $("#itemEditPhotoPreview");
+  const empty = $("#itemEditPhotoEmpty");
+  const remove = $("#itemEditPhotoRemove");
+  preview.hidden = !photo;
+  empty.hidden = Boolean(photo);
+  remove.hidden = !photo;
+  $("#itemEditPhotoButtonText").textContent = photo ? "Cambiar foto" : "Hacer o elegir foto";
+  if (photo) preview.src = photo;
+  else preview.removeAttribute("src");
+}
+
+function closeItemEditor() {
+  $("#itemEditDialog").close();
+  $("#itemEditForm").reset();
+  editingItemId = "";
+  editingItemListId = "";
+  editingItemPhotoDataUrl = "";
+  editingItemPhotoBusy = false;
+}
+
+function openItemEditor(itemId, listId = activeListId) {
+  const item = listItems(listId).find((entry) => entry.id === itemId);
+  if (!item) return;
+  editingItemId = item.id;
+  editingItemListId = listId;
+  editingItemPhotoDataUrl = sanitizeProductPhoto(item.photoDataUrl);
+  editingItemPhotoBusy = false;
+  $("#itemEditTitle").textContent = item.name;
+  $("#itemEditName").value = item.name;
+  $("#itemEditQuantity").value = String(Math.max(1, Number(item.quantity) || 1));
+  const category = $("#itemEditCategory");
+  if (!category.options.length) {
+    category.innerHTML = Object.keys(CATEGORY_META)
+      .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+      .join("");
+  }
+  category.value = Object.prototype.hasOwnProperty.call(CATEGORY_META, item.category) ? item.category : "Otros";
+  $("#itemEditPhotoInput").value = "";
+  $("#itemEditSave").disabled = false;
+  updateItemPhotoPreview();
+  $("#itemEditDialog").showModal();
+}
+
+async function selectItemPhoto(event) {
+  const input = event.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
+  editingItemPhotoBusy = true;
+  $("#itemEditSave").disabled = true;
+  $("#itemEditPhotoButton").classList.add("loading");
+  try {
+    editingItemPhotoDataUrl = await compressProductPhoto(file);
+    updateItemPhotoPreview();
+    showToast("Foto preparada");
+  } catch (error) {
+    showToast(error?.message || "No he podido preparar la foto");
+  } finally {
+    editingItemPhotoBusy = false;
+    $("#itemEditSave").disabled = false;
+    $("#itemEditPhotoButton").classList.remove("loading");
+    input.value = "";
+  }
+}
+
+function saveItemEditor(event) {
+  event.preventDefault();
+  if (editingItemPhotoBusy) return;
+  const item = listItems(editingItemListId).find((entry) => entry.id === editingItemId);
+  if (!item) {
+    closeItemEditor();
+    return;
+  }
+  try {
+    updateShoppingItem(item, {
+      name: $("#itemEditName").value,
+      quantity: $("#itemEditQuantity").value,
+      category: $("#itemEditCategory").value,
+      photoDataUrl: editingItemPhotoDataUrl,
+    });
+    persistList(editingItemListId);
+    closeItemEditor();
+    render();
+    impact("light");
+    showToast("Producto actualizado");
+  } catch (error) {
+    showToast(error?.message || "No he podido actualizar el producto");
+  }
 }
 
 async function shareOrCopy(shareData, copiedMessage, promptLabel) {
@@ -1333,12 +1493,16 @@ function renderList() {
 
 function renderItem(item) {
   const amount = formatAmount(item);
+  const photo = sanitizeProductPhoto(item.photoDataUrl);
   return `
     <article class="shopping-item ${item.checked ? "checked" : ""}" data-item-id="${item.id}">
       <button class="item-check" type="button" data-action="toggle" aria-label="${item.checked ? "Desmarcar" : "Marcar"} ${escapeHtml(item.name)}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9"/></svg>
       </button>
-      <div class="item-copy"><strong>${escapeHtml(item.name)}</strong>${amount ? `<small>${escapeHtml(amount)}</small>` : ""}</div>
+      <button class="item-edit-trigger" type="button" data-item-edit="${escapeHtml(item.id)}" aria-label="Editar ${escapeHtml(item.name)}">
+        ${photo ? `<span class="item-photo-thumb"><img src="${escapeHtml(photo)}" alt="" /></span>` : ""}
+        <span class="item-copy"><strong>${escapeHtml(item.name)}</strong>${amount ? `<small>${escapeHtml(amount)}</small>` : ""}</span>
+      </button>
       <div class="quantity-control">
         <button type="button" data-action="decrease" aria-label="Quitar uno">−</button>
         <span>${item.quantity}</span>
@@ -2137,7 +2301,7 @@ $("#addForm").addEventListener("submit", (event) => {
   const input = $("#itemInput");
   addEntries(parseSpokenList(input.value));
   input.value = "";
-  input.focus();
+  finishQuickAddInput(input);
 });
 $("#manualExpirationForm").addEventListener("submit", saveManualExpiration);
 $("#specialListForm").addEventListener("submit", saveSpecialList);
@@ -2166,6 +2330,17 @@ $("#specialListShare").addEventListener("click", () => shareSpecialList().catch(
 }));
 $("#specialListDelete").addEventListener("click", deleteSpecialList);
 $("#specialListCancel").addEventListener("click", () => $("#specialListDialog").close());
+$("#itemEditForm").addEventListener("submit", saveItemEditor);
+$("#itemEditCancel").addEventListener("click", closeItemEditor);
+$("#itemEditPhotoInput").addEventListener("change", selectItemPhoto);
+$("#itemEditPhotoRemove").addEventListener("click", () => {
+  editingItemPhotoDataUrl = "";
+  updateItemPhotoPreview();
+});
+$("#itemEditDialog").addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeItemEditor();
+});
 $("#shoppingStart").addEventListener("click", enterShoppingMode);
 $("#finishShopping").addEventListener("click", requestFinishShopping);
 $("#finishConfirm").addEventListener("click", finishShopping);
@@ -2187,6 +2362,12 @@ document.addEventListener("click", (event) => {
 
   const listSelector = event.target.closest("[data-list-select]");
   if (listSelector) selectList(listSelector.dataset.listSelect);
+
+  const itemEdit = event.target.closest("[data-item-edit]");
+  if (itemEdit) {
+    openItemEditor(itemEdit.dataset.itemEdit);
+    return;
+  }
 
   const itemElement = event.target.closest("[data-item-id]");
   const itemAction = event.target.closest("[data-action]");
@@ -2272,7 +2453,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=30");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=32");
   serviceWorkerRegistration.update().catch(() => {});
 }
 

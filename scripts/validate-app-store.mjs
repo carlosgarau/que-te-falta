@@ -58,6 +58,8 @@ requireCondition(infoPlist.includes("<string>¿Qué te falta?</string>"),
   "El nombre visible en iPhone debe ser ¿Qué te falta?");
 for (const requiredText of [
   "NSMicrophoneUsageDescription",
+  "NSCameraUsageDescription",
+  "NSPhotoLibraryUsageDescription",
   "NSSpeechRecognitionUsageDescription",
   "ITSAppUsesNonExemptEncryption",
   "public.app-category.shopping",
