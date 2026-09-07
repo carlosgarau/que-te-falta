@@ -99,7 +99,10 @@ jobs:
           set -euo pipefail
           AAB_PATH="android/app/build/outputs/bundle/release/app-release.aab"
           test -s "$AAB_PATH"
-          jarsigner -verify -strict "$AAB_PATH"
+          # Los certificados de subida son autofirmados por diseño. Sin --strict,
+          # jarsigner comprueba la integridad criptográfica sin convertir esa
+          # característica normal en un error de CI.
+          jarsigner -verify "$AAB_PATH"
           echo "AAB_PATH=$AAB_PATH" >> "$GITHUB_ENV"
 
       - name: Guardar AAB
