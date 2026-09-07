@@ -68,6 +68,7 @@ import {
   makeAccountInviteUrl,
   mergeIntoAccountListState,
   mergeAccountState,
+  observeAccountState,
   removeListMember,
   saveAccountProfile,
   savePrimaryFamilyListId,
@@ -284,7 +285,7 @@ function saveState({ sync = true } = {}) {
   scheduleNativeExpirationNotifications();
 }
 
-function scheduleAccountPrimarySync(delay = 350) {
+function scheduleAccountPrimarySync() {
   if (!accountPrimaryList || !accountUser) return;
   clearTimeout(accountWriteTimer);
   accountWriteTimer = null;
@@ -747,6 +748,7 @@ async function initializeAccountSpecialMembership(membership) {
   if (!membership?.id || accountSpecialSyncs.has(membership.id)) return;
   const remoteList = await getAccountList(membership.id);
   if (!remoteList?.state) return;
+  observeAccountState(membership.id, remoteList.state);
   let local = state.specialLists.find((entry) => entry.accountListId === membership.id);
   if (!local) {
     local = {
@@ -796,6 +798,7 @@ async function initializeAccountDataInternal(preferredListId = "") {
   const familyById = new Map(familyLists.map((entry) => [entry.id, entry]));
   accountMemberships = resolution.memberships.map((entry) => familyById.get(entry.id) || entry);
   const remoteList = selected.list || await getAccountList(selected.id);
+  observeAccountState(selected.id, remoteList?.state || {});
   accountPrimaryList = {
     id: selected.id,
     name: remoteList?.meta?.name || selected.name || "Mi lista familiar",
@@ -964,6 +967,7 @@ async function onAccountAuthChanged(user) {
   renderAccountIdentity();
   renderFamilySharing();
   if (!user) {
+    NATIVE.setSiriPrimaryList?.("", "").catch(() => {});
     stopAccountDataSync();
     return;
   }

@@ -354,9 +354,11 @@ export async function ensureFamilyAccountList(localState, selection = {}) {
 }
 
 export async function getAccountList(listId) {
-  const list = await databaseRequest(`lists/${encodePathPart(listId)}`);
-  if (list?.state) accountWriter.observe(listId, list.state);
-  return list;
+  return databaseRequest(`lists/${encodePathPart(listId)}`);
+}
+
+export function observeAccountState(listId, state) {
+  return accountWriter.observe(listId, state);
 }
 
 export async function updateAccountListState(listId, state) {
