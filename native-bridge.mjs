@@ -144,9 +144,9 @@ globalThis.LaCompraNative = {
       if (!FirebaseAuthentication) return null;
       return (await FirebaseAuthentication.getCurrentUser()).user || null;
     },
-    async getIdToken() {
+    async getIdToken(forceRefresh = false) {
       if (!FirebaseAuthentication) throw new Error("El acceso seguro no está disponible");
-      return (await FirebaseAuthentication.getIdToken()).token;
+      return (await FirebaseAuthentication.getIdToken({ forceRefresh: Boolean(forceRefresh) })).token;
     },
     async signIn(provider) {
       if (!FirebaseAuthentication) throw new Error("El acceso seguro no está disponible");

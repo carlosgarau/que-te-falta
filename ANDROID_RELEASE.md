@@ -50,6 +50,6 @@ Desde Android Studio se puede ejecutar en un teléfono o emulador. En Windows ta
 
 ## Publicación automatizada
 
-La acción manual «Preparar Android para Google Play» genera un `.aab` firmado de la versión 1.0.2. La clave privada se conserva fuera del repositorio y GitHub solo recibe una copia cifrada como secreto.
+La acción manual «Preparar Android para Google Play» genera un `.aab` firmado de la versión 1.0.3. La clave privada se conserva fuera del repositorio y GitHub solo recibe una copia cifrada como secreto.
 
 Cuando exista la aplicación en Play Console y esté preparada la cuenta de servicio, añade el secreto `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` y ejecuta la misma acción con `upload_to_play=true` para subirla como borrador a pruebas internas.

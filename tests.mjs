@@ -58,6 +58,7 @@ import {
   makeAccountInviteUrl,
   mergeAccountState,
   normalizeAccountUser,
+  selectPrimaryFamilyAccountList,
 } from "./account-sharing.mjs";
 
 test("separa una frase con varios productos", () => {
@@ -456,6 +457,109 @@ test("autentica Realtime Database con el token de Firebase en el parámetro auth
   assert.equal(url.searchParams.get("auth"), "token+/= con espacios");
 });
 
+test("abre la lista compartida aunque el móvil recuerde una copia privada", () => {
+  const privateList = {
+    id: "privada",
+    type: "family",
+    memberCount: 1,
+    updatedAt: 200,
+  };
+  const sharedList = {
+    id: "compartida",
+    type: "family",
+    memberCount: 2,
+    updatedAt: 100,
+  };
+  assert.equal(selectPrimaryFamilyAccountList(
+    [privateList, sharedList],
+    { storedId: "privada", profileId: "privada" },
+  ).id, "compartida");
+});
+
+test("una invitación abre expresamente la lista indicada", () => {
+  const lists = [
+    { id: "familia-a", type: "family", memberCount: 3, updatedAt: 300 },
+    { id: "familia-b", type: "family", memberCount: 2, updatedAt: 200 },
+  ];
+  assert.equal(selectPrimaryFamilyAccountList(lists, { preferredId: "familia-b" }).id, "familia-b");
+});
+
+test("la lista principal guardada en la cuenta gana entre varias compartidas", () => {
+  const lists = [
+    { id: "familia-a", type: "family", memberCount: 2, updatedAt: 300 },
+    { id: "familia-b", type: "family", memberCount: 2, updatedAt: 200 },
+  ];
+  assert.equal(selectPrimaryFamilyAccountList(lists, { profileId: "familia-b" }).id, "familia-b");
+});
+
+test("la actualización reúne copias sin borrarlas y conserva la lista principal en la cuenta", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const accountSharing = await readFile(new URL("./account-sharing.mjs", import.meta.url), "utf8");
+  const nativeBridge = await readFile(new URL("./native-bridge.mjs", import.meta.url), "utf8");
+  assert.match(app, /familyLists\.forEach\([\s\S]*mergeFamilyStates/u);
+  assert.match(app, /mergeIntoAccountListState\(/u);
+  assert.match(app, /stopLegacyFamilySyncAfterAccountMigration\(\)/u);
+  assert.match(accountSharing, /activeFamilyListId/u);
+  assert.match(accountSharing, /method: "PATCH"/u);
+  assert.match(nativeBridge, /getIdToken\(\{ forceRefresh: Boolean\(forceRefresh\) \}\)/u);
+  assert.equal(app.includes("deleteAccountList(selected.id)"), false);
+});
+
+test("renueva el token y fusiona cambios concurrentes antes de guardar", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  const tokenRefreshes = [];
+  const requests = [];
+  let profileAttempts = 0;
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "usuario-1", displayName: "Usuario" }),
+        getIdToken: async (forceRefresh) => {
+          tokenRefreshes.push(Boolean(forceRefresh));
+          return forceRefresh ? "token-renovado" : "token-inicial";
+        },
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async (url, options = {}) => {
+      requests.push({ url: String(url), options });
+      if (String(url).includes("/userProfiles/usuario-1.json")) {
+        profileAttempts += 1;
+        if (profileAttempts === 1) return new Response("null", { status: 401 });
+        return new Response(JSON.stringify({ activeFamilyListId: "compartida" }), { status: 200 });
+      }
+      if (String(url).includes("/lists/compartida/state.json") && (options.method || "GET") === "GET") {
+        return new Response(JSON.stringify({
+          version: 2,
+          items: [{ id: "remoto", key: "leche", name: "Leche", quantity: 1, checked: false }],
+        }), { status: 200, headers: { etag: '"estado-1"' } });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    const accountModule = await import(`./account-sharing.mjs?sync-test=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    const profile = await accountModule.getAccountProfile();
+    assert.equal(profile.activeFamilyListId, "compartida");
+    assert.deepEqual(tokenRefreshes.slice(0, 2), [false, true]);
+
+    const merged = await accountModule.mergeIntoAccountListState("compartida", {
+      version: 2,
+      items: [{ id: "local", key: "pan", name: "Pan", quantity: 1, checked: false }],
+    }, mergeFamilyStates);
+    assert.deepEqual(merged.items.map((item) => item.name).sort(), ["Leche", "Pan"]);
+    const conditionalWrite = requests.find((entry) => (
+      entry.options.method === "PUT" && entry.options.headers?.["if-match"]
+    ));
+    assert.equal(conditionalWrite.options.headers["if-match"], '"estado-1"');
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("identifica el proveedor que debe revalidarse al eliminar una cuenta", () => {
   assert.equal(accountProviderForDeletion({ providerId: "apple.com" }), "apple.com");
   assert.equal(accountProviderForDeletion({ providerData: [{ providerId: "google.com" }] }), "google.com");
@@ -557,11 +661,11 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=33/u);
-  assert.match(index, /app\.mjs\?v=33/u);
-  assert.match(app, /service-worker\.js\?v=33/u);
-  assert.match(worker, /que-te-falta-v33/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=32/u);
+  assert.match(index, /styles\.css\?v=34/u);
+  assert.match(index, /app\.mjs\?v=34/u);
+  assert.match(app, /service-worker\.js\?v=34/u);
+  assert.match(worker, /que-te-falta-v34/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=33/u);
 });
 
 test("el editor de producto incluye una foto opcional y permisos claros en iPhone", async () => {

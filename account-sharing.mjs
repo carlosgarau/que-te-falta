@@ -12,6 +12,7 @@ const FIREBASE_CONFIG = Object.freeze({
 export const ACCOUNT_INVITE_PARAMETER = "invitacion";
 export const ACCOUNT_ACTIVE_LIST_PREFIX = "que-te-falta-active-list:";
 export const ACCOUNT_INVITE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+export const ACCOUNT_PRIMARY_LIST_FIELD = "activeFamilyListId";
 
 const NATIVE = globalThis.LaCompraNative || {};
 let firebaseModulesPromise = null;
@@ -139,10 +140,10 @@ export async function signOutAccount() {
   accountUser = null;
 }
 
-async function getIdToken() {
-  if (NATIVE.accountAuth?.available) return NATIVE.accountAuth.getIdToken();
+async function getIdToken(forceRefresh = false) {
+  if (NATIVE.accountAuth?.available) return NATIVE.accountAuth.getIdToken(forceRefresh);
   if (!webAuth?.currentUser) throw new Error("Inicia sesión para continuar");
-  return webAuth.currentUser.getIdToken();
+  return webAuth.currentUser.getIdToken(forceRefresh);
 }
 
 export function makeAuthenticatedDatabaseUrl(path, token, databaseUrl = FIREBASE_CONFIG.databaseURL) {
@@ -151,23 +152,33 @@ export function makeAuthenticatedDatabaseUrl(path, token, databaseUrl = FIREBASE
   return url.toString();
 }
 
-async function databaseRequest(path, { method = "GET", body } = {}) {
-  const token = await getIdToken();
-  const response = await fetch(makeAuthenticatedDatabaseUrl(path, token), {
+async function authenticatedDatabaseResponse(path, { method = "GET", body, headers = {} } = {}, forceRefresh = false) {
+  const token = await getIdToken(forceRefresh);
+  return fetch(makeAuthenticatedDatabaseUrl(path, token), {
     method,
     headers: {
       Accept: "application/json",
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...headers,
     },
     cache: "no-store",
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+}
+
+function databaseError(response) {
+  const error = new Error(response.status === 401 || response.status === 403
+    ? "No tienes permiso para abrir esta lista"
+    : `No se puede sincronizar la lista (${response.status})`);
+  error.status = response.status;
+  return error;
+}
+
+async function databaseRequest(path, options = {}) {
+  let response = await authenticatedDatabaseResponse(path, options);
+  if (response.status === 401) response = await authenticatedDatabaseResponse(path, options, true);
   if (!response.ok) {
-    const error = new Error(response.status === 401 || response.status === 403
-      ? "No tienes permiso para abrir esta lista"
-      : `No se puede sincronizar la lista (${response.status})`);
-    error.status = response.status;
-    throw error;
+    throw databaseError(response);
   }
   if (response.status === 204) return null;
   return response.json();
@@ -237,6 +248,52 @@ export async function listAccountMemberships() {
   return Object.entries(records || {}).map(([id, record]) => ({ id, ...record }));
 }
 
+export function selectPrimaryFamilyAccountList(familyLists, {
+  preferredId = "",
+  profileId = "",
+  storedId = "",
+} = {}) {
+  const candidates = (Array.isArray(familyLists) ? familyLists : [])
+    .filter((entry) => entry?.id && entry.type === "family");
+  if (!candidates.length) return null;
+
+  const explicit = candidates.find((entry) => entry.id === preferredId);
+  if (explicit) return explicit;
+
+  const shared = candidates.filter((entry) => Number(entry.memberCount) > 1);
+  const pool = shared.length ? shared : candidates;
+  for (const id of [profileId, storedId]) {
+    const remembered = pool.find((entry) => entry.id === id);
+    if (remembered) return remembered;
+  }
+
+  return [...pool].sort((left, right) => (
+    (Number(right.memberCount) || 0) - (Number(left.memberCount) || 0)
+    || (Number(right.updatedAt) || 0) - (Number(left.updatedAt) || 0)
+    || String(left.id).localeCompare(String(right.id))
+  ))[0];
+}
+
+export async function listFamilyAccountLists(memberships = null) {
+  const records = Array.isArray(memberships) ? memberships : await listAccountMemberships();
+  const familyMemberships = records.filter((entry) => entry.type === "family" && entry.id);
+  const lists = await Promise.all(familyMemberships.map(async (membership) => {
+    const list = await getAccountList(membership.id);
+    if (!list) return null;
+    return {
+      ...membership,
+      name: list.meta?.name || membership.name || "Mi lista familiar",
+      role: list.members?.[accountUser?.uid]?.role || membership.role || "editor",
+      memberCount: Object.keys(list.members || {}).length,
+      createdAt: Number(list.meta?.createdAt) || 0,
+      updatedAt: Number(list.meta?.updatedAt) || Number(membership.updatedAt) || 0,
+      state: list.state || {},
+      list,
+    };
+  }));
+  return lists.filter(Boolean);
+}
+
 export async function createAccountList({ name, type = "family", state = {} }) {
   if (!accountUser) throw new Error("Inicia sesión para compartir");
   const id = randomId();
@@ -261,19 +318,30 @@ export async function createAccountList({ name, type = "family", state = {} }) {
   return { id, ...list };
 }
 
-export async function ensureFamilyAccountList(localState, preferredId = "") {
-  const memberships = await listAccountMemberships();
-  let selected = memberships.find((entry) => entry.type === "family" && entry.id === preferredId)
-    || memberships.find((entry) => entry.type === "family");
+export async function ensureFamilyAccountList(localState, selection = {}) {
+  const options = typeof selection === "string" ? { storedId: selection } : (selection || {});
+  let memberships = await listAccountMemberships();
+  let familyLists = await listFamilyAccountLists(memberships);
+  let selected = selectPrimaryFamilyAccountList(familyLists, options);
   if (!selected) {
     const created = await createAccountList({
       name: "Mi lista familiar",
       type: "family",
       state: accountStateFrom(localState),
     });
-    selected = { id: created.id, ...created.meta, role: "owner" };
+    memberships = await listAccountMemberships();
+    familyLists = await listFamilyAccountLists(memberships);
+    selected = familyLists.find((entry) => entry.id === created.id)
+      || {
+        id: created.id,
+        ...created.meta,
+        role: "owner",
+        memberCount: 1,
+        state: created.state || {},
+        list: created,
+      };
   }
-  return selected;
+  return { selected, memberships, familyLists };
 }
 
 export async function getAccountList(listId) {
@@ -289,6 +357,47 @@ export async function updateAccountListState(listId, state) {
     });
   }
   await databaseRequest(`lists/${encodePathPart(listId)}/meta/updatedAt`, { method: "PUT", body: Date.now() });
+}
+
+export async function mergeIntoAccountListState(listId, incomingState, mergeStates, maxAttempts = 5) {
+  if (typeof mergeStates !== "function") throw new Error("No se puede reunir la lista");
+  const path = `lists/${encodePathPart(listId)}/state`;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let response = await authenticatedDatabaseResponse(path, {
+      headers: { "X-Firebase-ETag": "true" },
+    });
+    if (response.status === 401) {
+      response = await authenticatedDatabaseResponse(path, {
+        headers: { "X-Firebase-ETag": "true" },
+      }, true);
+    }
+    if (!response.ok) throw databaseError(response);
+    const etag = response.headers.get("etag");
+    const remoteState = response.status === 204 ? {} : (await response.json() || {});
+    const mergedState = mergeStates(incomingState || {}, remoteState);
+    if (!etag) {
+      await updateAccountListState(listId, mergedState);
+      return mergedState;
+    }
+
+    let write = await authenticatedDatabaseResponse(path, {
+      method: "PUT",
+      headers: { "if-match": etag },
+      body: mergedState,
+    });
+    if (write.status === 401) {
+      write = await authenticatedDatabaseResponse(path, {
+        method: "PUT",
+        headers: { "if-match": etag },
+        body: mergedState,
+      }, true);
+    }
+    if (write.status === 412) continue;
+    if (!write.ok) throw databaseError(write);
+    await databaseRequest(`lists/${encodePathPart(listId)}/meta/updatedAt`, { method: "PUT", body: Date.now() });
+    return mergedState;
+  }
+  throw new Error("La lista ha cambiado varias veces. Vuelve a intentarlo en unos segundos");
 }
 
 export function subscribeAccountList(listId, { onState = () => {}, onStatus = () => {} } = {}) {
@@ -337,8 +446,13 @@ export function subscribeAccountList(listId, { onState = () => {}, onStatus = ()
     refreshTimer = setTimeout(() => connect().catch(() => {}), 50 * 60 * 1000);
   };
 
-  refresh().then(connect).catch(() => {});
+  const ready = refresh().then(async (list) => {
+    await connect();
+    return list;
+  });
+  ready.catch(() => {});
   return {
+    ready,
     refresh,
     stop() {
       stopped = true;
@@ -466,11 +580,21 @@ export async function deleteAccountAndData() {
   accountUser = null;
 }
 
-export async function saveAccountProfile() {
+export async function getAccountProfile() {
+  if (!accountUser) return null;
+  return databaseRequest(`userProfiles/${encodePathPart(accountUser.uid)}`);
+}
+
+export async function saveAccountProfile(fields = {}) {
   if (!accountUser) return;
   await databaseRequest(`userProfiles/${encodePathPart(accountUser.uid)}`, {
-    method: "PUT",
-    body: { ...accountUser, updatedAt: Date.now() },
+    method: "PATCH",
+    body: { ...accountUser, ...fields, updatedAt: Date.now() },
   });
+}
+
+export async function savePrimaryFamilyListId(listId) {
+  if (!accountUser) return;
+  await saveAccountProfile({ [ACCOUNT_PRIMARY_LIST_FIELD]: cleanText(listId, 80) });
 }
 
