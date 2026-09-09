@@ -6,7 +6,7 @@ on:
       version_code:
         description: "Código entero de versión Android"
         required: true
-        default: "2"
+        default: "3"
         type: string
       upload_to_play:
         description: "Subir el AAB a pruebas internas de Google Play"
@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 35
     environment: google-play
     env:
-      ANDROID_VERSION_NAME: "1.0.2"
+      ANDROID_VERSION_NAME: "1.0.3"
       ANDROID_VERSION_CODE: ${{ inputs.version_code }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}

@@ -362,6 +362,7 @@ input[role="switch"]:checked::after { transform: translateX(18px); }
 .account-list-memberships { display: grid; gap: 6px; margin-top: 10px; }
 .account-list-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 9px; border-radius: 10px; background: #f4f5ef; }
 .account-list-row span { min-width: 0; overflow: hidden; font-size: 9px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.account-list-row span small { display: block; margin-top: 2px; color: var(--muted); font-size: 8px; font-weight: 600; }
 .account-list-row button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 8px; color: var(--green); background: #e1eee5; font-size: 9px; font-weight: 800; }
 .account-delete { margin-top: 8px; }
 .import-button input { display: none; }

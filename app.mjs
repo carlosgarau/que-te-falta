@@ -23,7 +23,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=33";
+} from "./core.mjs?v=34";
 import {
   createFamilyId,
   createFamilySync,
@@ -42,11 +42,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=33";
+} from "./family-sync.mjs?v=34";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=33";
+} from "./secure-sharing.mjs?v=34";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -59,20 +59,23 @@ import {
   deleteAccountAndData,
   ensureFamilyAccountList,
   getAccountList,
+  getAccountProfile,
   getListInvite,
   getListMembers,
   initializeAccountAuth,
   leaveAccountList,
   listAccountMemberships,
   makeAccountInviteUrl,
+  mergeIntoAccountListState,
   mergeAccountState,
   removeListMember,
   saveAccountProfile,
+  savePrimaryFamilyListId,
   signInWithAccount,
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=33";
+} from "./account-sharing.mjs?v=34";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -80,6 +83,7 @@ const SHARE_BASE_URL = "https://carlosgarau.github.io/que-te-falta/";
 const NATIVE = globalThis.LaCompraNative || {};
 const SHARED_PASSWORD_STORAGE_PREFIX = "la-compra-shared-password-v1:";
 const ACCOUNT_MIGRATION_KEY_PREFIX = "que-te-falta-account-migrated:";
+const ACCOUNT_UNIFY_KEY_PREFIX = "que-te-falta-account-unified-v34:";
 const ACCOUNT_WELCOME_SEEN_KEY = "que-te-falta-account-welcome-seen-v1";
 const ACCOUNT_SESSION_RESET_KEY = "que-te-falta-account-session-reset-v29";
 const ICONS = {
@@ -685,6 +689,16 @@ function stopAccountDataSync() {
   setAccountStatus(accountUser ? "connecting" : "local");
 }
 
+function stopLegacyFamilySyncAfterAccountMigration() {
+  if (!familyId) return;
+  familySync?.stop();
+  familySync = null;
+  forgetSharedPassword(familyId);
+  familyId = "";
+  clearFamilyAccess();
+  setFamilyStatus("local");
+}
+
 function renderAccountIdentity() {
   const name = $("#accountName");
   const email = $("#accountEmail");
@@ -713,8 +727,12 @@ function renderAccountMemberships() {
   }
   container.innerHTML = familyLists.map((entry) => `
     <div class="account-list-row">
-      <span>${escapeHtml(entry.name || "Lista familiar")}</span>
-      <button type="button" data-account-list-open="${escapeHtml(entry.id)}" ${entry.id === accountPrimaryList?.id ? "disabled" : ""}>${entry.id === accountPrimaryList?.id ? "Abierta" : "Abrir"}</button>
+      <span>${escapeHtml(entry.name || "Lista familiar")}<small>${Number(entry.memberCount) > 1 ? `${Number(entry.memberCount)} personas` : "Copia anterior"}</small></span>
+      ${entry.id === accountPrimaryList?.id
+        ? '<button type="button" disabled>Abierta</button>'
+        : Number(entry.memberCount) > 1
+          ? `<button type="button" data-account-list-open="${escapeHtml(entry.id)}">Abrir</button>`
+          : '<button type="button" disabled>Respaldo</button>'}
     </div>
   `).join("");
 }
@@ -768,44 +786,74 @@ async function initializeAccountDataInternal(preferredListId = "") {
   stopAccountDataSync();
   setAccountStatus("connecting");
   await saveAccountProfile();
-  accountMemberships = await listAccountMemberships();
-  const storedId = preferredListId || localStorage.getItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`) || "";
-  const selected = await ensureFamilyAccountList(state, storedId);
-  accountMemberships = await listAccountMemberships();
-  const remoteList = await getAccountList(selected.id);
+  const profile = await getAccountProfile();
+  const storedId = localStorage.getItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`) || "";
+  const resolution = await ensureFamilyAccountList(state, {
+    preferredId: preferredListId,
+    profileId: profile?.activeFamilyListId || "",
+    storedId,
+  });
+  const { selected, familyLists } = resolution;
+  const familyById = new Map(familyLists.map((entry) => [entry.id, entry]));
+  accountMemberships = resolution.memberships.map((entry) => familyById.get(entry.id) || entry);
+  const remoteList = selected.list || await getAccountList(selected.id);
   accountPrimaryList = {
     id: selected.id,
     name: remoteList?.meta?.name || selected.name || "Mi lista familiar",
     role: remoteList?.members?.[accountUser.uid]?.role || selected.role || "editor",
+    memberCount: Object.keys(remoteList?.members || {}).length || Number(selected.memberCount) || 1,
   };
   localStorage.setItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`, accountPrimaryList.id);
+  await savePrimaryFamilyListId(accountPrimaryList.id);
 
   const migrationKey = `${ACCOUNT_MIGRATION_KEY_PREFIX}${accountUser.uid}:${accountPrimaryList.id}`;
+  const unifyKey = `${ACCOUNT_UNIFY_KEY_PREFIX}${accountUser.uid}`;
   const needsMigration = !localStorage.getItem(migrationKey);
   const remoteState = remoteList?.state || {};
-  if (needsMigration && hasFamilyData(state)) {
-    const merged = mergeFamilyStates(accountStateFrom(state), remoteState);
+  const needsUnification = !localStorage.getItem(unifyKey)
+    && (familyLists.length > 1 || Boolean(familyId) || needsMigration);
+  let recoveryState = accountStateFrom(state);
+  familyLists.forEach((entry) => {
+    recoveryState = mergeFamilyStates(recoveryState, entry.state || {});
+  });
+  if (needsUnification && hasFamilyData(recoveryState)) {
+    const merged = await mergeIntoAccountListState(
+      accountPrimaryList.id,
+      recoveryState,
+      mergeFamilyStates,
+    );
     applyRemoteAccountState(merged, { initial: true });
-    await updateAccountListState(accountPrimaryList.id, accountStateFrom(state));
     localStorage.setItem(migrationKey, "1");
-    showToast("He guardado tu lista actual en tu cuenta");
+    localStorage.setItem(unifyKey, "1");
+    showToast(familyLists.length > 1
+      ? "He reunido tus listas en la compartida"
+      : "He guardado tu lista actual en tu cuenta");
   } else {
     applyRemoteAccountState(remoteState, { initial: true });
+    if (needsUnification) localStorage.setItem(unifyKey, "1");
   }
 
+  let initialAccountRefresh = true;
   accountPrimarySync = subscribeAccountList(accountPrimaryList.id, {
-    onState: (remote) => applyRemoteAccountState(remote),
+    onState: (remote) => applyRemoteAccountState(remote, { initial: initialAccountRefresh }),
     onStatus: setAccountStatus,
   });
+  await accountPrimarySync.ready;
+  initialAccountRefresh = false;
   await Promise.all(accountMemberships
     .filter((entry) => entry.type === "special")
     .map((entry) => initializeAccountSpecialMembership(entry).catch(() => {})));
-  setAccountStatus("synced");
+  stopLegacyFamilySyncAfterAccountMigration();
   renderFamilySharing();
 }
 
 function initializeAccountData(preferredListId = "") {
-  if (accountInitialization) return accountInitialization;
+  if (accountInitialization) {
+    if (!preferredListId) return accountInitialization;
+    return accountInitialization.then(() => (
+      accountPrimaryList?.id === preferredListId ? undefined : initializeAccountData(preferredListId)
+    ));
+  }
   accountInitialization = initializeAccountDataInternal(preferredListId)
     .catch((error) => {
       setAccountStatus("offline");
@@ -955,7 +1003,9 @@ function renderFamilySharing() {
       synced: "Guardada y sincronizada para las personas autorizadas.",
       offline: "Sin conexión. Los cambios se sincronizarán cuando vuelva Internet.",
     };
-    status.textContent = copy[accountStatus] || "Preparando tu lista privada…";
+    status.textContent = accountStatus === "synced" && Number(accountPrimaryList?.memberCount) > 1
+      ? "Compartida y sincronizada con tu familia."
+      : copy[accountStatus] || "Preparando tu lista privada…";
     const owner = accountPrimaryList?.role === "owner";
     shareButton.hidden = !owner;
     shareButton.textContent = "Invitar por WhatsApp";
@@ -963,7 +1013,9 @@ function renderFamilySharing() {
     disconnectButton.hidden = true;
     badge.hidden = false;
     badge.className = `family-badge ${accountStatus}`;
-    badge.textContent = accountStatus === "synced" ? "Privada" : accountStatus === "offline" ? "Sin conexión" : "Conectando";
+    badge.textContent = accountStatus === "synced"
+      ? Number(accountPrimaryList?.memberCount) > 1 ? "Compartida" : "Privada"
+      : accountStatus === "offline" ? "Sin conexión" : "Conectando";
     return;
   }
 
@@ -2453,7 +2505,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=33");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=34");
   serviceWorkerRegistration.update().catch(() => {});
 }
 
