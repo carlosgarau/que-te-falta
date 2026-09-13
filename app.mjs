@@ -23,7 +23,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=34";
+} from "./core.mjs?v=35";
 import {
   createFamilyId,
   createFamilySync,
@@ -42,11 +42,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=34";
+} from "./family-sync.mjs?v=35";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=34";
+} from "./secure-sharing.mjs?v=35";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -68,6 +68,7 @@ import {
   makeAccountInviteUrl,
   mergeIntoAccountListState,
   mergeAccountState,
+  observeAccountState,
   removeListMember,
   saveAccountProfile,
   savePrimaryFamilyListId,
@@ -75,7 +76,7 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=34";
+} from "./account-sharing.mjs?v=35";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -284,15 +285,14 @@ function saveState({ sync = true } = {}) {
   scheduleNativeExpirationNotifications();
 }
 
-function scheduleAccountPrimarySync(delay = 350) {
+function scheduleAccountPrimarySync() {
   if (!accountPrimaryList || !accountUser) return;
   clearTimeout(accountWriteTimer);
-  accountWriteTimer = setTimeout(() => {
-    accountWriteTimer = null;
-    updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
-      .then(() => setAccountStatus("synced"))
-      .catch(() => setAccountStatus("offline"));
-  }, delay);
+  accountWriteTimer = null;
+  // Capture the edit before an incoming Siri/server event can replace it.
+  updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
+    .then(() => accountPrimarySync?.refresh())
+    .catch(() => setAccountStatus("offline"));
 }
 
 function cleanListName(value, fallback = "Lista especial") {
@@ -748,6 +748,7 @@ async function initializeAccountSpecialMembership(membership) {
   if (!membership?.id || accountSpecialSyncs.has(membership.id)) return;
   const remoteList = await getAccountList(membership.id);
   if (!remoteList?.state) return;
+  observeAccountState(membership.id, remoteList.state);
   let local = state.specialLists.find((entry) => entry.accountListId === membership.id);
   if (!local) {
     local = {
@@ -797,6 +798,7 @@ async function initializeAccountDataInternal(preferredListId = "") {
   const familyById = new Map(familyLists.map((entry) => [entry.id, entry]));
   accountMemberships = resolution.memberships.map((entry) => familyById.get(entry.id) || entry);
   const remoteList = selected.list || await getAccountList(selected.id);
+  observeAccountState(selected.id, remoteList?.state || {});
   accountPrimaryList = {
     id: selected.id,
     name: remoteList?.meta?.name || selected.name || "Mi lista familiar",
@@ -805,6 +807,7 @@ async function initializeAccountDataInternal(preferredListId = "") {
   };
   localStorage.setItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`, accountPrimaryList.id);
   await savePrimaryFamilyListId(accountPrimaryList.id);
+  NATIVE.setSiriPrimaryList?.(accountUser.uid, accountPrimaryList.id).catch(() => {});
 
   const migrationKey = `${ACCOUNT_MIGRATION_KEY_PREFIX}${accountUser.uid}:${accountPrimaryList.id}`;
   const unifyKey = `${ACCOUNT_UNIFY_KEY_PREFIX}${accountUser.uid}`;
@@ -964,6 +967,7 @@ async function onAccountAuthChanged(user) {
   renderAccountIdentity();
   renderFamilySharing();
   if (!user) {
+    NATIVE.setSiriPrimaryList?.("", "").catch(() => {});
     stopAccountDataSync();
     return;
   }
@@ -2505,7 +2509,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=34");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=35");
   serviceWorkerRegistration.update().catch(() => {});
 }
 

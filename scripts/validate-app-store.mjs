@@ -94,7 +94,7 @@ for (const requiredText of [
 ]) {
   requireCondition(metadata.includes(requiredText), `Los metadatos no contienen ${requiredText}`);
 }
-requireCondition(!metadata.includes(",Siri,"), "Los metadatos no deben anunciar una integración nativa de Siri inexistente");
+requireCondition(metadata.includes(",Siri,"), "Los metadatos deben anunciar la integración nativa de Siri");
 
 const accountSharing = file("account-sharing.mjs");
 const nativeBridge = file("native-bridge.mjs");

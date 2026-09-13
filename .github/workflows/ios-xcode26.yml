@@ -67,6 +67,9 @@ jobs:
       - name: Preparar el proyecto iOS
         run: pnpm run ios:sync
 
+      - name: Probar el motor nativo de Siri
+        run: swift scripts/test-siri-core.swift
+
       - name: Mostrar la configuración de Xcode
         run: xcodebuild -project ios/App/App.xcodeproj -list
 

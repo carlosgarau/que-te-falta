@@ -23,6 +23,8 @@ Tu lista familiar de casa: compartida, ordenada por familias, con voz y avisos p
 
 Añade productos escribiendo o hablando, consulta la lista en voz alta y llévala agrupada por familias para ir tachando en el supermercado. Si un producto ya estaba apuntado, la app te pregunta si quieres aumentar la cantidad.
 
+En iPhone también puedes añadir sin abrir la app diciendo «Oye Siri, faltan patatas en Qué te falta». Siri confirma el producto y usa la lista familiar seleccionada.
+
 Toca un producto para editar su nombre, cantidad o familia. Si necesitas una marca, un tamaño o un envase concreto, puedes añadir una foto opcional para que las demás personas de la lista sepan exactamente cuál comprar.
 
 Comparte la lista familiar o una lista puntual —por ejemplo, Navidad— desde la hoja de compartir de iOS. La persona invitada inicia sesión y recibe acceso únicamente a esa lista. Puedes consultar los miembros y retirar su acceso en cualquier momento.
@@ -32,6 +34,7 @@ También puedes registrar alimentos delicados, aunque no estuvieran en la lista.
 Funciones destacadas:
 
 - Dictado y lectura en voz alta.
+- Añadir productos directamente con Siri.
 - Lista familiar actualizada entre dispositivos.
 - Listas puntuales independientes y compartibles.
 - Productos agrupados por familias.
@@ -44,7 +47,7 @@ Funciones destacadas:
 
 ## Palabras clave
 
-`lista,compra,familia,voz,caducidad,despensa,recordatorios,supermercado,alimentos,hogar`
+`lista,compra,familia,voz,Siri,caducidad,despensa,supermercado,alimentos,hogar`
 
 ## Novedades de la versión 1.0
 
@@ -68,6 +71,12 @@ Primera versión para iPhone con listas familiares y puntuales, dictado, lectura
 - Todos los dispositivos recuerdan la misma lista compartida.
 - La sesión renueva automáticamente la conexión y muestra claramente cuándo la lista está compartida.
 
+## Novedades de la versión 1.0.4
+
+- Corregida la sincronización en ambos sentidos entre el propietario y las personas invitadas.
+- La lista vuelve a comprobar cambios automáticamente si iOS interrumpe la conexión en tiempo real.
+- Ya puedes añadir productos sin abrir la app diciendo «Oye Siri, faltan patatas en Qué te falta».
+
 ## Notas para App Review
 
 La respuesta completa para Guideline 2.1 está preparada en `APP_REVIEW_RESPONSE_2026-08-14.md` con el modelo de iPhone, la versión de iOS y el nombre de la grabación facilitada.
@@ -75,6 +84,8 @@ La respuesta completa para Guideline 2.1 está preparada en `APP_REVIEW_RESPONSE
 La aplicación no requiere crear una cuenta para las funciones locales, que pueden probarse nada más abrirla. Compartir y sincronizar sí requiere iniciar sesión con Apple o Google. No hay compras integradas, suscripciones, publicidad, analítica ni seguimiento.
 
 Para probar la voz, pulsa el botón del micrófono y acepta los permisos de micrófono y reconocimiento. Para probar notificaciones, añade manualmente un producto en la pestaña Caducidad y selecciona una fecha futura. Para probar el uso compartido, abre Ajustes, inicia sesión con Apple y pulsa **Invitar por WhatsApp**. El destinatario debe iniciar sesión y aceptar la invitación. La cuenta puede eliminarse desde Ajustes > Cuenta > Eliminar mi cuenta y mis datos; la aplicación vuelve a confirmar la identidad y revoca la autorización de Apple antes del borrado.
+
+Para probar Siri en iOS 16 o posterior, abre la app e inicia sesión una vez; después di «Oye Siri, faltan patatas en Qué te falta». La acción guarda el producto en la lista seleccionada sin abrir la interfaz. Si ya estaba, Siri pide confirmación antes de aumentar la cantidad.
 
 Las listas compartidas son privadas y accesibles solamente para cuentas invitadas. Cada invitación corresponde a una única lista. No existe un feed público, perfiles públicos ni descubrimiento de usuarios; por ello no son aplicables funciones de denuncia o bloqueo de contenido público.
 

@@ -1,3 +1,5 @@
+import { AccountStateWriter } from "./account-state-writer.mjs?v=35";
+
 const FIREBASE_WEB_VERSION = "11.10.0";
 const FIREBASE_CONFIG = Object.freeze({
   apiKey: "AIzaSyA29DqSnfWX9ueuLC13B0sP8ln5j-5kVD4",
@@ -13,6 +15,7 @@ export const ACCOUNT_INVITE_PARAMETER = "invitacion";
 export const ACCOUNT_ACTIVE_LIST_PREFIX = "que-te-falta-active-list:";
 export const ACCOUNT_INVITE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 export const ACCOUNT_PRIMARY_LIST_FIELD = "activeFamilyListId";
+export const ACCOUNT_SYNC_POLL_INTERVAL_MS = 4_000;
 
 const NATIVE = globalThis.LaCompraNative || {};
 let firebaseModulesPromise = null;
@@ -174,15 +177,22 @@ function databaseError(response) {
   return error;
 }
 
-async function databaseRequest(path, options = {}) {
+async function databaseRequest(path, { withETag = false, allowConflict = false, ...options } = {}) {
   let response = await authenticatedDatabaseResponse(path, options);
   if (response.status === 401) response = await authenticatedDatabaseResponse(path, options, true);
+  if (allowConflict && response.status === 412) return false;
   if (!response.ok) {
     throw databaseError(response);
   }
   if (response.status === 204) return null;
-  return response.json();
+  const data = await response.json();
+  return withETag ? { state: data || {}, etag: response.headers.get("ETag") } : data;
 }
+
+const accountWriter = new AccountStateWriter({
+  read: (id) => databaseRequest(`lists/${encodePathPart(id)}/state`, { withETag: true, headers: { "X-Firebase-ETag": "true" } }),
+  write: (id, state, etag) => databaseRequest(`lists/${encodePathPart(id)}/state`, { method: "PUT", body: state, headers: { "if-match": etag }, allowConflict: true }),
+});
 
 export function accountInviteFromUrl(value) {
   try {
@@ -348,15 +358,31 @@ export async function getAccountList(listId) {
   return databaseRequest(`lists/${encodePathPart(listId)}`);
 }
 
-export async function updateAccountListState(listId, state) {
-  await databaseRequest(`lists/${encodePathPart(listId)}/state`, { method: "PUT", body: state });
+export function observeAccountState(listId, state) {
+  return accountWriter.observe(listId, state);
+}
+
+async function updateOwnedListMetadata(listId, state = {}) {
+  const list = await getAccountList(listId);
+  if (list?.meta?.ownerId !== accountUser?.uid) return;
   if (state?.name) {
     await databaseRequest(`lists/${encodePathPart(listId)}/meta/name`, {
       method: "PUT",
       body: cleanText(state.name, 50),
     });
   }
-  await databaseRequest(`lists/${encodePathPart(listId)}/meta/updatedAt`, { method: "PUT", body: Date.now() });
+  await databaseRequest(`lists/${encodePathPart(listId)}/meta/updatedAt`, {
+    method: "PUT",
+    body: Date.now(),
+  });
+}
+
+export async function updateAccountListState(listId, state) {
+  const saved = await accountWriter.update(listId, state);
+  // The state is the authoritative save. Metadata is cosmetic and only the
+  // owner may edit it, so it must never interrupt an editor's subscription.
+  await updateOwnedListMetadata(listId, state).catch(() => {});
+  return saved;
 }
 
 export async function mergeIntoAccountListState(listId, incomingState, mergeStates, maxAttempts = 5) {
@@ -394,41 +420,82 @@ export async function mergeIntoAccountListState(listId, incomingState, mergeStat
     }
     if (write.status === 412) continue;
     if (!write.ok) throw databaseError(write);
-    await databaseRequest(`lists/${encodePathPart(listId)}/meta/updatedAt`, { method: "PUT", body: Date.now() });
+    await updateOwnedListMetadata(listId, mergedState).catch(() => {});
     return mergedState;
   }
   throw new Error("La lista ha cambiado varias veces. Vuelve a intentarlo en unos segundos");
 }
 
-export function subscribeAccountList(listId, { onState = () => {}, onStatus = () => {} } = {}) {
+export function subscribeAccountList(listId, {
+  onState = () => {},
+  onStatus = () => {},
+  EventSourceImpl = globalThis.EventSource,
+  setTimeoutImpl = globalThis.setTimeout,
+  clearTimeoutImpl = globalThis.clearTimeout,
+  pollIntervalMs = ACCOUNT_SYNC_POLL_INTERVAL_MS,
+} = {}) {
   let source = null;
   let stopped = false;
   let refreshTimer = null;
+  let reconnectTimer = null;
+  let pollTimer = null;
   let streamHealthCheck = null;
+  let refreshInFlight = null;
 
-  const refresh = async () => {
-    try {
-      const list = await getAccountList(listId);
-      if (list?.state) onState(list.state, list);
-      onStatus("synced");
-      return list;
-    } catch (error) {
-      onStatus("offline");
-      throw error;
-    }
+  const refresh = () => {
+    if (refreshInFlight) return refreshInFlight;
+    refreshInFlight = (async () => {
+      try {
+        const list = await getAccountList(listId);
+        if (list?.state && accountWriter.observe(listId, list.state)) onState(list.state, list);
+        onStatus("synced");
+        return list;
+      } catch (error) {
+        onStatus("offline");
+        throw error;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+    return refreshInFlight;
   };
 
-  const connect = async () => {
-    if (stopped || !globalThis.EventSource) return;
+  const schedulePoll = (delay = pollIntervalMs) => {
+    if (stopped || !setTimeoutImpl || !(pollIntervalMs > 0)) return;
+    clearTimeoutImpl?.(pollTimer);
+    pollTimer = setTimeoutImpl(async () => {
+      pollTimer = null;
+      const visible = !globalThis.document || globalThis.document.visibilityState !== "hidden";
+      if (visible) {
+        await refresh().catch(() => {});
+        if (!source) await connect().catch(() => scheduleReconnect(true, 5_000));
+      }
+      schedulePoll();
+    }, delay);
+    pollTimer?.unref?.();
+  };
+
+  const scheduleReconnect = (forceRefresh = false, delay = 1_500) => {
+    if (stopped || !EventSourceImpl || !setTimeoutImpl) return;
+    clearTimeoutImpl?.(reconnectTimer);
+    reconnectTimer = setTimeoutImpl(() => {
+      reconnectTimer = null;
+      connect(forceRefresh).catch(() => scheduleReconnect(true, 5_000));
+    }, delay);
+    reconnectTimer?.unref?.();
+  };
+
+  const connect = async (forceRefresh = false) => {
+    if (stopped || !EventSourceImpl) return;
     source?.close();
-    const token = await getIdToken();
+    const token = await getIdToken(forceRefresh);
     const url = `${FIREBASE_CONFIG.databaseURL}/lists/${encodePathPart(listId)}.json?auth=${encodeURIComponent(token)}`;
-    source = new EventSource(url);
+    source = new EventSourceImpl(url);
     source.addEventListener("put", (event) => {
       try {
         const message = JSON.parse(event.data);
         const list = message.path === "/" ? message.data : null;
-        if (list?.state) onState(list.state, list);
+        if (list?.state && accountWriter.observe(listId, list.state)) onState(list.state, list);
         else refresh().catch(() => {});
       } catch {
         refresh().catch(() => {});
@@ -436,14 +503,20 @@ export function subscribeAccountList(listId, { onState = () => {}, onStatus = ()
     });
     source.addEventListener("patch", () => refresh().catch(() => {}));
     source.addEventListener("open", () => onStatus("synced"));
+    source.addEventListener("cancel", () => scheduleReconnect(false));
+    source.addEventListener("auth_revoked", () => scheduleReconnect(true));
     source.onerror = () => {
       if (streamHealthCheck) return;
       streamHealthCheck = refresh()
         .catch(() => {})
-        .finally(() => { streamHealthCheck = null; });
+        .finally(() => {
+          streamHealthCheck = null;
+          scheduleReconnect(false);
+        });
     };
-    clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => connect().catch(() => {}), 50 * 60 * 1000);
+    clearTimeoutImpl?.(refreshTimer);
+    refreshTimer = setTimeoutImpl?.(() => connect(true).catch(() => scheduleReconnect(true)), 50 * 60 * 1000);
+    refreshTimer?.unref?.();
   };
 
   const ready = refresh().then(async (list) => {
@@ -451,12 +524,17 @@ export function subscribeAccountList(listId, { onState = () => {}, onStatus = ()
     return list;
   });
   ready.catch(() => {});
+  // Start the fallback independently of the initial request. If iOS opens the
+  // app during a brief network outage, the shared list reconnects by itself.
+  schedulePoll();
   return {
     ready,
     refresh,
     stop() {
       stopped = true;
-      clearTimeout(refreshTimer);
+      clearTimeoutImpl?.(refreshTimer);
+      clearTimeoutImpl?.(reconnectTimer);
+      clearTimeoutImpl?.(pollTimer);
       source?.close();
       source = null;
     },

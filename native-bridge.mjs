@@ -8,6 +8,7 @@ const Share = plugins.Share;
 const SplashScreen = plugins.SplashScreen;
 const SpeechRecognition = plugins.SpeechRecognition;
 const FirebaseAuthentication = plugins.FirebaseAuthentication;
+const SiriShopping = plugins.SiriShopping;
 let speechListenerHandles = [];
 let accountAuthListenerHandle = null;
 
@@ -182,6 +183,13 @@ globalThis.LaCompraNative = {
 };
 
 const initialLaunchUrl = isNative && App?.getLaunchUrl ? App.getLaunchUrl().catch(() => null) : Promise.resolve(null);
+
+globalThis.LaCompraNative.setSiriPrimaryList = async (uid = "", listId = "") => {
+  if (SiriShopping) await SiriShopping.setPrimaryList({ uid, listId });
+};
+SiriShopping?.addListener("listChanged", () => {
+  document.dispatchEvent(new CustomEvent("la-compra:native-active"));
+});
 
 if (isNative) {
   App?.addListener("appStateChange", ({ isActive }) => {

@@ -560,6 +560,110 @@ test("renueva el token y fusiona cambios concurrentes antes de guardar", async (
   }
 });
 
+test("un invitado termina la preparaci�n sin intentar editar metadatos del propietario", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+  let remoteState = {
+    version: 2,
+    items: [{ id: "owner-item", key: "leche", name: "Leche", quantity: 1, checked: false }],
+  };
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "invitado", displayName: "Invitado" }),
+        getIdToken: async () => "token-editor",
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async (url, options = {}) => {
+      const request = { url: String(url), method: options.method || "GET", options };
+      requests.push(request);
+      if (request.url.includes("/lists/compartida/state.json")) {
+        if (request.method === "PUT") remoteState = JSON.parse(options.body);
+        return new Response(JSON.stringify(remoteState), {
+          status: 200,
+          headers: { etag: '"editor-state"' },
+        });
+      }
+      if (request.url.includes("/lists/compartida.json")) {
+        return new Response(JSON.stringify({
+          meta: { ownerId: "propietario" },
+          members: { propietario: { role: "owner" }, invitado: { role: "editor" } },
+          state: remoteState,
+        }), { status: 200 });
+      }
+      if (request.url.includes("/meta/")) return new Response("Permission denied", { status: 403 });
+      return new Response("null", { status: 200 });
+    };
+
+    const accountModule = await import(`./account-sharing.mjs?editor-sync=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    const merged = await accountModule.mergeIntoAccountListState("compartida", {
+      version: 2,
+      items: [{ id: "guest-item", key: "pan", name: "Pan", quantity: 1, checked: false }],
+    }, mergeFamilyStates);
+
+    assert.deepEqual(merged.items.map((item) => item.key).sort(), ["leche", "pan"]);
+    assert.equal(requests.some((request) => request.url.includes("/meta/")), false);
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("la lista compartida comprueba cambios aunque el canal en tiempo real no est� disponible", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  const timers = [];
+  let remoteState = {
+    version: 2,
+    items: [{ id: "initial", key: "leche", name: "Leche", quantity: 1, checked: false }],
+  };
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "invitado", displayName: "Invitado" }),
+        getIdToken: async () => "token-editor",
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      meta: { ownerId: "propietario" },
+      state: remoteState,
+    }), { status: 200 });
+
+    const accountModule = await import(`./account-sharing.mjs?poll-sync=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    const received = [];
+    const sync = accountModule.subscribeAccountList("compartida", {
+      EventSourceImpl: null,
+      pollIntervalMs: 1,
+      setTimeoutImpl: (callback) => {
+        timers.push(callback);
+        return { unref() {} };
+      },
+      clearTimeoutImpl: () => {},
+      onState: (next) => received.push(structuredClone(next)),
+    });
+    await sync.ready;
+    remoteState = {
+      ...remoteState,
+      items: [...remoteState.items, { id: "owner-new", key: "patata", name: "Patata", quantity: 1, checked: false }],
+    };
+    await timers.shift()();
+    sync.stop();
+
+    assert.equal(received.length, 2);
+    assert.equal(received.at(-1).items.at(-1).key, "patata");
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("identifica el proveedor que debe revalidarse al eliminar una cuenta", () => {
   assert.equal(accountProviderForDeletion({ providerId: "apple.com" }), "apple.com");
   assert.equal(accountProviderForDeletion({ providerData: [{ providerId: "google.com" }] }), "google.com");
@@ -661,11 +765,11 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=34/u);
-  assert.match(index, /app\.mjs\?v=34/u);
-  assert.match(app, /service-worker\.js\?v=34/u);
-  assert.match(worker, /que-te-falta-v34/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=33/u);
+  assert.match(index, /styles\.css\?v=35/u);
+  assert.match(index, /app\.mjs\?v=35/u);
+  assert.match(app, /service-worker\.js\?v=35/u);
+  assert.match(worker, /que-te-falta-v35/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=34/u);
 });
 
 test("el editor de producto incluye una foto opcional y permisos claros en iPhone", async () => {
