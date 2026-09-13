@@ -107,11 +107,11 @@ struct AddShoppingProduct: AppIntent {
 struct ShoppingShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: AddShoppingProduct(), phrases: [
+            "Faltan \(\.$product) en \(.applicationName)",
+            "Falta \(\.$product) en \(.applicationName)",
             "Añade \(\.$product) en \(.applicationName)",
             "Agrega \(\.$product) en \(.applicationName)",
-            "Apunta \(\.$product) en \(.applicationName)",
-            "Añade un producto en \(.applicationName)",
-            "Añade a la lista de \(.applicationName)"
+            "Añade un producto en \(.applicationName)"
         ], shortTitle: "Añadir producto", systemImageName: "cart.badge.plus")
     }
 }

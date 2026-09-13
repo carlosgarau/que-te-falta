@@ -6,13 +6,15 @@ Implementación nativa para iOS 16 o posterior. No requiere crear un atajo manua
 
 Después de instalar la actualización, abrir la app e iniciar sesión una vez:
 
+- «Oye Siri, faltan patatas en Qué te falta».
+- «Oye Siri, falta leche en Qué te falta».
 - «Oye Siri, añade patatas en Qué te falta».
 - «Oye Siri, agrega leche en Qué te falta».
 - «Oye Siri, añade un producto en Qué te falta»: Siri pregunta el producto.
 
 La acción usa la lista familiar seleccionada en la app. Si no hay preferencia válida y hay varias listas, pregunta cuál. El parámetro Lista permite también elegir otra lista compartida desde la acción del sistema.
 
-El catálogo inicial facilita reconocer productos habituales. `EntityStringQuery` admite nombres libres, pero Siri puede pedir el producto por separado cuando no consigue resolver una frase completa. La frase genérica sin el nombre de la aplicación puede dirigirse a Recordatorios; no se anuncia como garantizada.
+El catálogo inicial facilita reconocer productos habituales. `EntityStringQuery` admite nombres libres, pero Siri puede pedir el producto por separado cuando no consigue resolver una frase completa. Apple exige que los App Shortcuts incluyan el nombre de la aplicación; por eso la forma garantizada es «faltan patatas en Qué te falta». La frase genérica «faltan patatas» puede dirigirse a Recordatorios y no se anuncia como garantizada.
 
 Si el producto ya existe, Siri pregunta antes de aumentar su cantidad. Una unidad distinta requiere confirmación y se guarda como otra entrada. Cancelar no guarda ninguna parte de la petición. La confirmación se vuelve a comprobar si otro familiar modifica la cantidad mientras Siri escucha.
 

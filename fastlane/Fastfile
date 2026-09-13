@@ -23,10 +23,10 @@ end
 Spaceship::ConnectAPI::App.prepend(ReadyForReviewEditVersion)
 
 platform :ios do
-  desc "Crea la versión 1.0.3, selecciona la compilación 12 y la envía a revisión"
+  desc "Crea la versión 1.0.4, selecciona la compilación 13 y la envía a revisión"
   lane :submit_review do
-    app_version = ENV.fetch("APP_STORE_VERSION", "1.0.3")
-    build_number = ENV.fetch("APP_STORE_BUILD_NUMBER", "12")
+    app_version = ENV.fetch("APP_STORE_VERSION", "1.0.4")
+    build_number = ENV.fetch("APP_STORE_BUILD_NUMBER", "13")
     api_key = app_store_connect_api_key(
       key_id: ENV.fetch("APPLE_API_KEY_ID"),
       issuer_id: ENV.fetch("APPLE_API_ISSUER_ID"),
@@ -54,7 +54,7 @@ platform :ios do
       automatic_release: true,
       force: true,
       release_notes: {
-        "es-ES" => "Corrige la conexión con la lista familiar para que puedas crear invitaciones, compartir una lista y mantenerla sincronizada entre dispositivos."
+        "es-ES" => "Corrige la sincronización en ambos sentidos entre familiares y permite añadir productos directamente con Siri."
       },
       run_precheck_before_submit: false,
       version_check_wait_retry_limit: 10,

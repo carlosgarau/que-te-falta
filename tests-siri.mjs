@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { planSiriAddition } from "./siri-shopping.mjs";
 import { buildSiriBundle } from "./scripts/siri-bundle.mjs";
@@ -151,4 +152,10 @@ test("A tap before the updated screen arrives cannot delete an unseen Siri addit
   await writer.update("list", local);
   assert.equal(remote.items[0].quantity, 3);
   assert.equal(remote.items[1].key, "leche");
+});
+
+test("Siri publishes the natural Spanish phrase for missing products", async () => {
+  const intents = await readFile(new URL("./ios/App/App/ShoppingIntents.swift", import.meta.url), "utf8");
+  assert.equal(intents.includes('"Faltan \\(\\.$product) en \\(.applicationName)"'), true);
+  assert.match(intents, /static var openAppWhenRun = false/u);
 });

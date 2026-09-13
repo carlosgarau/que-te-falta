@@ -52,8 +52,9 @@ export class AccountStateWriter {
   observe(id, state) {
     const record = this.record(id);
     if (record.pending) return false;
+    const changed = !equal(record.base, state);
     record.base = clone(state);
-    return true;
+    return changed;
   }
   update(id, next) {
     const record = this.record(id);
