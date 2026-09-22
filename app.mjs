@@ -3,6 +3,7 @@ import {
   CATEGORY_META,
   createInitialState,
   detectVoiceCommand,
+  displayProductName,
   formatAmount,
   getActiveExpirations,
   getPendingExpirationAlerts,
@@ -115,16 +116,20 @@ let standaloneListId = sharedListIdFromUrl(window.location.href);
 let pendingAccountInviteId = accountInviteFromUrl(window.location.href);
 let familyId = standaloneListId ? "" : rememberFamilyId();
 let familySync = null;
-let accountUser = null;
-let accountPrimaryList = null;
+let accountUser = ["pendiente", "guardado"].includes(appStoreCaptureMode)
+  ? { uid: "captura", displayName: "Ana", email: "ana@example.invalid" }
+  : null;
+let accountPrimaryList = ["pendiente", "guardado"].includes(appStoreCaptureMode)
+  ? { id: "captura", name: "Lista habitual", role: "owner", memberCount: 2 }
+  : null;
 let accountPrimarySync = null;
 let accountMemberships = [];
 let accountSpecialSyncs = new Map();
-let accountStatus = "local";
+let accountStatus = appStoreCaptureMode === "guardado" ? "synced" : appStoreCaptureMode === "pendiente" ? "offline" : "local";
 let accountDialogIntent = "";
 let accountWriteTimer = null;
 let accountWriteVersion = 0;
-let accountHasUnsavedChanges = false;
+let accountHasUnsavedChanges = appStoreCaptureMode === "pendiente";
 let accountWriteInFlight = false;
 let accountInitialization = null;
 let serviceWorkerRegistration = null;
@@ -187,7 +192,7 @@ function finishQuickAddInput(input) {
 function localCaptureMode() {
   if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) return "";
   const mode = new URL(window.location.href).searchParams.get("captura") || "";
-  return ["lista", "compra", "caducidad", "comprados", "historial"].includes(mode) ? mode : "";
+  return ["lista", "compra", "caducidad", "comprados", "historial", "pendiente", "guardado"].includes(mode) ? mode : "";
 }
 
 function captureDate(daysFromToday) {
@@ -453,6 +458,9 @@ function speak(message) {
 
 function showToast(message, action = null) {
   const toast = $("#toast");
+  if (!action) undoItemChange = null;
+  toast.inert = false;
+  toast.setAttribute("aria-hidden", "false");
   toast.textContent = message;
   if (action) {
     const button = document.createElement("button");
@@ -463,7 +471,13 @@ function showToast(message, action = null) {
   }
   toast.classList.add("visible");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("visible"), action ? 7_000 : 2600);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove("visible");
+    toast.inert = true;
+    toast.setAttribute("aria-hidden", "true");
+    toast.replaceChildren();
+    if (action) undoItemChange = null;
+  }, action ? 7_000 : 2600);
 }
 
 function recordActivity(action, product, listId = activeListId) {
@@ -1685,21 +1699,22 @@ function renderList() {
 function renderItem(item) {
   const amount = formatAmount(item);
   const photo = sanitizeProductPhoto(item.photoDataUrl);
+  const displayName = displayProductName(item.name);
   return `
     <article class="shopping-item ${item.checked ? "checked" : ""}" data-item-id="${item.id}">
-      <button class="item-check" type="button" data-action="toggle" aria-label="${item.checked ? "Desmarcar" : "Marcar"} ${escapeHtml(item.name)}">
+      <button class="item-check" type="button" data-action="toggle" aria-label="${item.checked ? "Desmarcar" : "Marcar"} ${escapeHtml(displayName)}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9"/></svg>
       </button>
-      <button class="item-edit-trigger" type="button" data-item-edit="${escapeHtml(item.id)}" aria-label="Editar ${escapeHtml(item.name)}">
+      <button class="item-edit-trigger" type="button" data-item-edit="${escapeHtml(item.id)}" aria-label="Editar ${escapeHtml(displayName)}">
         ${photo ? `<span class="item-photo-thumb"><img src="${escapeHtml(photo)}" alt="" /></span>` : ""}
-        <span class="item-copy"><strong>${escapeHtml(item.name)}</strong>${amount ? `<small>${escapeHtml(amount)}</small>` : ""}</span>
+        <span class="item-copy"><strong>${escapeHtml(displayName)}</strong>${amount ? `<small>${escapeHtml(amount)}</small>` : ""}</span>
       </button>
       <div class="quantity-control">
         <button type="button" data-action="decrease" aria-label="Quitar uno">−</button>
         <span>${item.quantity}</span>
         <button type="button" data-action="increase" aria-label="Añadir uno">+</button>
       </div>
-      <button class="item-remove" type="button" data-action="remove" aria-label="Eliminar ${escapeHtml(item.name)}">×</button>
+      <button class="item-remove" type="button" data-action="remove" aria-label="Eliminar ${escapeHtml(displayName)}">×</button>
     </article>`;
 }
 
@@ -1853,7 +1868,7 @@ function renderHistory() {
     byDate.get(key).push(purchase);
   });
   content.innerHTML = `<div class="history-list">${[...byDate.entries()].slice(0, 12).map(([date, entries]) => `
-      <section><h3>${date}</h3>${entries.map((entry) => `<div><span>${escapeHtml(entry.name)}</span><small>${escapeHtml(formatAmount(entry))}</small></div>`).join("")}</section>`).join("")}</div>`;
+      <section><h3>${date}</h3>${entries.map((entry) => `<div><span>${escapeHtml(displayProductName(entry.name))}</span><small>${escapeHtml(formatAmount(entry))}</small></div>`).join("")}</section>`).join("")}</div>`;
 }
 
 function renderShoppingDock() {
@@ -2675,6 +2690,8 @@ function refreshSharedData() {
   sharedListSyncs.forEach((entry) => entry.sync.refresh());
   accountPrimarySync?.refresh();
   accountSpecialSyncs.forEach((entry) => entry.sync.refresh());
+  if (accountUser && !accountPrimaryList && !accountInitialization) initializeAccountData();
+  if (accountHasUnsavedChanges) flushAccountPrimarySync();
 }
 
 window.addEventListener("online", () => {

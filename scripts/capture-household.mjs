@@ -36,6 +36,25 @@ try {
     await page.goto(`http://127.0.0.1:${port}/?captura=lista`, { waitUntil: "networkidle" });
     await page.waitForTimeout(450);
     await page.screenshot({ path: resolve(output, `lista-${width}.png`), fullPage: true });
+    if (width <= 390) {
+      const mobile = await page.evaluate(() => ({
+        voice: parseFloat(getComputedStyle(document.querySelector(".voice-card p")).fontSize),
+        navigation: parseFloat(getComputedStyle(document.querySelector(".bottom-nav button")).fontSize),
+        targets: [".item-check", ".item-remove", ".quantity-control button"].map((selector) => {
+          const rect = document.querySelector(selector).getBoundingClientRect();
+          return Math.min(rect.width, rect.height);
+        }),
+      }));
+      if (mobile.voice < 12 || mobile.navigation < 11 || mobile.targets.some((size) => size < 44)) {
+        throw new Error(`Legibilidad o toque insuficiente en ${width}px: ${JSON.stringify(mobile)}`);
+      }
+    }
+    await page.locator("#itemInput").focus();
+    if (await page.locator("#itemInput").evaluate((input) => getComputedStyle(input).outlineStyle) === "none") {
+      throw new Error(`El campo de producto no tiene foco visible en ${width}px`);
+    }
+    await page.screenshot({ path: resolve(output, `foco-${width}.png`), fullPage: true });
+    await page.locator("#itemInput").blur();
     await page.locator('[data-nav="history"]').first().click();
     await page.waitForTimeout(450);
     await page.screenshot({ path: resolve(output, `historial-${width}.png`), fullPage: true });
@@ -52,9 +71,33 @@ try {
     await page.locator('[data-nav="history"]').first().click();
     await page.waitForTimeout(450);
     await page.screenshot({ path: resolve(output, `actividad-${width}.png`), fullPage: true });
+    if (width === 320) {
+      await page.locator('[data-nav="list"]').first().click();
+      await page.waitForTimeout(450);
+      await page.locator('[data-action="remove"]').first().click();
+      await page.locator("#toast button").focus();
+      await page.waitForTimeout(7_150);
+      if (await page.locator("#toast button").count() || await page.locator("#toast").getAttribute("aria-hidden") !== "true") {
+        throw new Error("Deshacer continúa enfocable después de caducar");
+      }
+      if (await page.evaluate(() => document.querySelector("#toast").contains(document.activeElement))) {
+        throw new Error("El foco se ha quedado dentro del aviso oculto");
+      }
+      await page.screenshot({ path: resolve(output, "deshacer-caducado-320.png"), fullPage: true });
+    }
     if (errors.length) throw new Error(`Errores en ${width}px: ${errors.join(" | ")}`);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
     if (overflow) throw new Error(`Desbordamiento horizontal en ${width}px`);
+    for (const mode of ["pendiente", "guardado"]) {
+      await page.goto(`http://127.0.0.1:${port}/?captura=${mode}`, { waitUntil: "networkidle" });
+      await page.waitForTimeout(450);
+      await page.screenshot({ path: resolve(output, `${mode}-${width}.png`), fullPage: true });
+      if (width === 390) {
+        await page.locator("#settingsButton").click();
+        await page.waitForTimeout(250);
+        await page.screenshot({ path: resolve(output, `${mode}-ajustes-390.png`), fullPage: true });
+      }
+    }
     await page.close();
   }
 } finally {

@@ -827,8 +827,9 @@ test("un corte del canal en tiempo real verifica Firebase antes de mostrar sin c
 
 test("la cabecera de voz móvil deja espacio a la lista", async () => {
   const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
-  assert.match(styles, /\.voice-card \{ grid-template-columns: minmax\(0, 1fr\) 58px; min-height: 128px;/u);
+  assert.match(styles, /\.voice-card \{ grid-template-columns: minmax\(0, 1fr\) 58px; min-height: 150px;/u);
   assert.match(styles, /\.voice-card h1 \{ margin: 4px 0; font-size: 24px;/u);
+  assert.match(styles, /\.voice-card p \{ max-width: 230px; font-size: 12px;/u);
   assert.match(styles, /\.mic-button \{ width: 52px; height: 52px;/u);
 });
 

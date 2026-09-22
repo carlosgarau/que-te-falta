@@ -112,6 +112,15 @@ const ALIASES = {
   "zanahorias": "zanahoria", "zumos": "zumo",
 };
 
+const DISPLAY_NAMES = {
+  arandano: "arándano", atun: "atún", azucar: "azúcar", brocoli: "brócoli",
+  cafe: "café", calabacin: "calabacín", champu: "champú", dentifrico: "dentífrico",
+  esparrago: "espárrago", jamon: "jamón", "judia verde": "judía verde",
+  limon: "limón", macarron: "macarrón", melon: "melón", melocoton: "melocotón",
+  panal: "pañal", platano: "plátano", salmon: "salmón", sandia: "sandía",
+  te: "té", turron: "turrón",
+};
+
 const NUMBER_WORDS = {
   un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6,
   siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12,
@@ -173,6 +182,11 @@ export function titleCase(value) {
   return cleaned.charAt(0).toLocaleUpperCase("es") + cleaned.slice(1);
 }
 
+export function displayProductName(value) {
+  const name = String(value || "").trim();
+  return titleCase(DISPLAY_NAMES[normalizeText(name)] || name);
+}
+
 export function categoryFor(name) {
   const normalized = normalizeText(name);
   for (const category of Object.keys(CATEGORY_KEYWORDS)) {
@@ -215,11 +229,11 @@ export function parseEntry(raw) {
 
   text = text.replace(/^(de\s+)/i, "").trim();
   const key = productKey(text);
-  const canonicalName = ALIASES[normalizeText(text)] || normalizeText(text);
+  const canonicalName = ALIASES[normalizeText(text)] || text;
 
   return {
     key,
-    name: titleCase(canonicalName || text),
+    name: displayProductName(canonicalName || text),
     quantity,
     unit,
     category: categoryFor(key || text),
