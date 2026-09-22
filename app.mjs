@@ -461,7 +461,10 @@ function showToast(message, action = null) {
   if (!action) undoItemChange = null;
   toast.inert = false;
   toast.setAttribute("aria-hidden", "false");
-  toast.textContent = message;
+  toast.replaceChildren();
+  const copy = document.createElement("span");
+  copy.textContent = message;
+  toast.append(copy);
   if (action) {
     const button = document.createElement("button");
     button.type = "button";
@@ -485,7 +488,7 @@ function recordActivity(action, product, listId = activeListId) {
   state.activity = mergeActivity(state.activity, [makeActivity({
     action,
     product,
-    actor: accountUser?.displayName?.trim().split(/\s+/)[0] || "Tú",
+    actor: accountUser?.displayName?.trim() || "Tú",
   })]);
 }
 

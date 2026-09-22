@@ -84,6 +84,15 @@ try {
         throw new Error("El foco se ha quedado dentro del aviso oculto");
       }
       await page.screenshot({ path: resolve(output, "deshacer-caducado-320.png"), fullPage: true });
+      await page.locator("#itemInput").fill("Yogures naturales sin lactosa");
+      await page.locator('#addForm button[type="submit"]').click();
+      await page.locator(".shopping-item", { hasText: "Yogures naturales sin lactosa" }).locator('[data-action="remove"]').click();
+      await page.waitForTimeout(450);
+      if (await page.locator("#toast button").evaluate((button) => button.getBoundingClientRect().height) < 44) {
+        throw new Error("El botón Deshacer no tiene altura táctil suficiente");
+      }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: resolve(output, "deshacer-largo-320.png"), fullPage: true });
     }
     if (errors.length) throw new Error(`Errores en ${width}px: ${errors.join(" | ")}`);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -96,6 +105,13 @@ try {
         await page.locator("#settingsButton").click();
         await page.waitForTimeout(250);
         await page.screenshot({ path: resolve(output, `${mode}-ajustes-390.png`), fullPage: true });
+        if (mode === "pendiente") {
+          await page.locator("#importInput").focus();
+          if (await page.locator(".import-button").evaluate((label) => getComputedStyle(label).outlineStyle) === "none") {
+            throw new Error("Importar copia no tiene foco visible");
+          }
+          await page.screenshot({ path: resolve(output, "importar-foco-390.png"), fullPage: true });
+        }
       }
     }
     await page.close();
