@@ -15,6 +15,7 @@ const assets = [
   "app.mjs",
   "account-sharing.mjs",
   "account-state-writer.mjs",
+  "activity.mjs",
   "core.mjs",
   "family-sync.mjs",
   "secure-sharing.mjs",

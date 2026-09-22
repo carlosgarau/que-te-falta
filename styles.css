@@ -57,6 +57,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(40, 95, 67, 
 .family-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 99px; color: #2c6044; background: #e1eee5; font-size: 9px; font-weight: 800; }
 .family-badge::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ""; }
 .family-badge.connecting { color: #7b6327; background: #f5edce; }
+.family-badge.pending { color: #795d1c; background: #fff0c5; }
 .family-badge.offline { color: #9b463e; background: #f8e4df; }
 .icon-button { display: grid; width: 42px; height: 42px; padding: 0; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: rgba(255, 253, 248, .78); cursor: pointer; }
 .icon-button svg { width: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -213,6 +214,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(40, 95, 67, 
 .history-list h3 { margin: 0 0 10px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
 .history-list section > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid rgba(43,58,49,.07); font-size: 13px; }
 .history-list small { color: var(--muted); }
+.activity-section { margin: 24px 0; padding: 18px; border: 1px solid var(--line); border-radius: 20px; background: rgba(255,253,248,.82); }
+.activity-section h2 { margin: 0 0 12px; font-family: Georgia, serif; font-size: 20px; font-weight: 500; }
+.activity-section > p { margin: 0; color: var(--muted); font-size: 13px; }
+.activity-list { display: grid; }
+.activity-list > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 0; border-top: 1px solid rgba(43,58,49,.08); font-size: 13px; }
+.activity-list time { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
 
 .bottom-nav { position: fixed; z-index: 30; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); display: grid; width: min(calc(100% - 28px), 560px); grid-template-columns: repeat(4, 1fr); padding: 7px; border: 1px solid rgba(43,58,49,.11); border-radius: 23px; background: rgba(255,253,248,.9); box-shadow: 0 16px 45px rgba(35,48,40,.15); backdrop-filter: blur(18px); transform: translateX(-50%); }
 .bottom-nav button { position: relative; display: flex; min-height: 53px; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 17px; color: var(--muted); background: transparent; font-size: 11px; font-weight: 750; cursor: pointer; }
@@ -369,8 +376,10 @@ input[role="switch"]:checked::after { transform: translateX(18px); }
 .danger-button { width: 100%; min-height: 44px; border: 0; border-radius: 12px; color: #a63d32; background: #fae9e5; font-size: 11px; font-weight: 800; cursor: pointer; }
 .legal-links { margin: 16px 0 0; color: var(--muted); font-size: 10px; text-align: center; }
 .legal-links a { color: var(--green); font-weight: 750; }
-.toast { position: fixed; z-index: 100; left: 50%; top: calc(18px + env(safe-area-inset-top)); max-width: calc(100% - 40px); padding: 11px 16px; border-radius: 99px; color: #fff; background: rgba(25,40,31,.92); box-shadow: 0 10px 28px rgba(0,0,0,.18); font-size: 12px; font-weight: 700; opacity: 0; pointer-events: none; transform: translate(-50%, -18px); transition: .25s ease; }
-.toast.visible { opacity: 1; transform: translate(-50%, 0); }
+.toast { position: fixed; z-index: 100; left: 50%; bottom: calc(104px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); padding: 11px 16px; border-radius: 99px; color: #fff; background: rgba(25,40,31,.96); box-shadow: 0 10px 28px rgba(0,0,0,.18); font-size: 12px; font-weight: 700; opacity: 0; pointer-events: none; transform: translate(-50%, 18px); transition: .25s ease; }
+.toast.visible { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+.toast:has(button) { display: flex; align-items: center; gap: 14px; border-radius: 18px; white-space: nowrap; }
+.toast button { border: 0; border-radius: 12px; padding: 8px 10px; background: #fff; color: #174a37; font: inherit; font-weight: 800; cursor: pointer; }
 
 @media (max-width: 520px) {
   input:not([type="checkbox"]):not([type="file"]) { font-size: 16px; }

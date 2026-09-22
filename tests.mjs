@@ -765,10 +765,10 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=35/u);
-  assert.match(index, /app\.mjs\?v=35/u);
-  assert.match(app, /service-worker\.js\?v=35/u);
-  assert.match(worker, /que-te-falta-v35/u);
+  assert.match(index, /styles\.css\?v=36/u);
+  assert.match(index, /app\.mjs\?v=36/u);
+  assert.match(app, /service-worker\.js\?v=36/u);
+  assert.match(worker, /que-te-falta-v36/u);
   assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=34/u);
 });
 

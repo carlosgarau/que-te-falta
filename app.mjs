@@ -23,7 +23,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=35";
+} from "./core.mjs?v=36";
 import {
   createFamilyId,
   createFamilySync,
@@ -42,11 +42,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=35";
+} from "./family-sync.mjs?v=36";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=35";
+} from "./secure-sharing.mjs?v=36";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -76,7 +76,9 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=35";
+} from "./account-sharing.mjs?v=36";
+import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=36";
+import { mergeStateEdits } from "./account-state-writer.mjs?v=36";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -87,6 +89,8 @@ const ACCOUNT_MIGRATION_KEY_PREFIX = "que-te-falta-account-migrated:";
 const ACCOUNT_UNIFY_KEY_PREFIX = "que-te-falta-account-unified-v34:";
 const ACCOUNT_WELCOME_SEEN_KEY = "que-te-falta-account-welcome-seen-v1";
 const ACCOUNT_SESSION_RESET_KEY = "que-te-falta-account-session-reset-v29";
+const ACCOUNT_UNSAVED_KEY = "que-te-falta-unsaved-account-v1";
+const ACCOUNT_BASE_KEY_PREFIX = "que-te-falta-synced-base-v1:";
 const ICONS = {
   leaf: '<path d="M19 4C11 4 5 8 5 14c0 3 2 5 5 5 6 0 9-7 9-15Z"/><path d="M5 20c2-5 5-8 10-11"/>',
   fish: '<path d="M4 12c3-5 8-6 13-3l3-3v12l-3-3c-5 3-10 2-13-3Z"/><circle cx="13.5" cy="10.5" r=".7"/>',
@@ -119,6 +123,9 @@ let accountSpecialSyncs = new Map();
 let accountStatus = "local";
 let accountDialogIntent = "";
 let accountWriteTimer = null;
+let accountWriteVersion = 0;
+let accountHasUnsavedChanges = false;
+let accountWriteInFlight = false;
 let accountInitialization = null;
 let serviceWorkerRegistration = null;
 let familyStatus = familyId ? "connecting" : "local";
@@ -142,6 +149,7 @@ let expirationAlertQueue = [];
 let currentExpirationAlert = null;
 let recognition = null;
 let toastTimer = null;
+let undoItemChange = null;
 let nativeNotificationTimer = null;
 let editingItemId = "";
 let editingItemListId = "";
@@ -278,21 +286,75 @@ function rememberFamilyId() {
   return remembered;
 }
 
-function saveState({ sync = true } = {}) {
+function saveState({ sync = true, accountSync = sync } = {}) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (sync && accountPrimaryList) scheduleAccountPrimarySync();
+  if (accountSync && accountPrimaryList) scheduleAccountPrimarySync();
   if (sync && familySync) familySync.schedule(sharedStateFrom(state));
   scheduleNativeExpirationNotifications();
 }
 
 function scheduleAccountPrimarySync() {
   if (!accountPrimaryList || !accountUser) return;
+  accountWriteVersion += 1;
+  accountHasUnsavedChanges = true;
+  try { localStorage.setItem(ACCOUNT_UNSAVED_KEY, `${accountUser.uid}:${accountPrimaryList.id}`); } catch {}
+  renderFamilySharing();
+  flushAccountPrimarySync();
+}
+
+function accountBaseKey(listId = accountPrimaryList?.id) {
+  return `${ACCOUNT_BASE_KEY_PREFIX}${accountUser?.uid}:${listId}`;
+}
+
+function rememberAccountBase(remoteState) {
+  try { localStorage.setItem(accountBaseKey(), JSON.stringify(accountStateFrom(remoteState))); } catch {}
+}
+
+function readAccountBase() {
+  try { return JSON.parse(localStorage.getItem(accountBaseKey())); } catch { return null; }
+}
+
+function flushAccountPrimarySync() {
+  if (!accountPrimaryList || !accountUser || !accountHasUnsavedChanges || accountWriteInFlight) return;
   clearTimeout(accountWriteTimer);
   accountWriteTimer = null;
-  // Capture the edit before an incoming Siri/server event can replace it.
-  updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
-    .then(() => accountPrimarySync?.refresh())
-    .catch(() => setAccountStatus("offline"));
+  const listId = accountPrimaryList.id;
+  const version = accountWriteVersion;
+  accountWriteInFlight = true;
+  const local = accountStateFrom(state);
+  const base = readAccountBase();
+  getAccountList(listId)
+    .then((latest) => updateAccountListState(
+      listId,
+      base ? mergeStateEdits(base, local, accountStateFrom(latest?.state || {})) : local,
+    ))
+    .then((saved) => {
+      if (accountPrimaryList?.id !== listId) return;
+      rememberAccountBase(saved);
+      if (version === accountWriteVersion) {
+        accountHasUnsavedChanges = false;
+        try { localStorage.removeItem(ACCOUNT_UNSAVED_KEY); } catch {}
+        applyRemoteAccountState(saved, { initial: true });
+        renderFamilySharing();
+        accountPrimarySync?.refresh().catch(() => setAccountStatus("offline"));
+      } else {
+        // A newer local edit happened while this write was in flight. Rebase
+        // only that newer edit on the confirmed server state before retrying.
+        const rebased = mergeStateEdits(local, accountStateFrom(state), saved);
+        state = hydrateState(mergeAccountState(rebased, state));
+        saveState({ sync: false });
+        render();
+      }
+    })
+    .catch(() => {
+      if (accountPrimaryList?.id !== listId) return;
+      setAccountStatus("offline");
+      accountWriteTimer = setTimeout(flushAccountPrimarySync, 5_000);
+    })
+    .finally(() => {
+      accountWriteInFlight = false;
+      if (accountHasUnsavedChanges && accountPrimaryList?.id === listId && !accountWriteTimer) flushAccountPrimarySync();
+    });
 }
 
 function cleanListName(value, fallback = "Lista especial") {
@@ -355,7 +417,7 @@ function persistList(listId = activeListId) {
     return;
   }
 
-  saveState();
+  saveState({ accountSync: listId === "main" });
   if (listId !== "main") {
     const list = specialListById(listId);
     if (list?.accountListId) {
@@ -389,12 +451,60 @@ function speak(message) {
   window.speechSynthesis.speak(utterance);
 }
 
-function showToast(message) {
+function showToast(message, action = null) {
   const toast = $("#toast");
   toast.textContent = message;
+  if (action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", action.run, { once: true });
+    toast.append(button);
+  }
   toast.classList.add("visible");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove("visible"), 2600);
+  toastTimer = setTimeout(() => toast.classList.remove("visible"), action ? 7_000 : 2600);
+}
+
+function recordActivity(action, product, listId = activeListId) {
+  if (listId !== "main") return;
+  state.activity = mergeActivity(state.activity, [makeActivity({
+    action,
+    product,
+    actor: accountUser?.displayName?.trim().split(/\s+/)[0] || "Tú",
+  })]);
+}
+
+function offerItemUndo(listId, before, after, action) {
+  const token = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+  undoItemChange = { token, listId, before, after, action };
+  showToast(action === "remove" ? `${before.name} quitado` : `${before.name} actualizado`, {
+    label: "Deshacer",
+    run: () => {
+      if (undoItemChange?.token !== token) return;
+      undoItemChange = null;
+      const items = listItems(listId);
+      const current = items.find((entry) => entry.id === before.id);
+      if (action === "remove") {
+        if (current || items.some((entry) => entry.key === before.key)) {
+          showToast("La lista ha cambiado. No puedo deshacerlo sin revisar");
+          return;
+        }
+        items.push(before);
+      } else {
+        const field = action === "toggle" ? "checked" : "quantity";
+        if (!current || current[field] !== after[field]) {
+          showToast("Otra persona ha cambiado este producto");
+          return;
+        }
+        current[field] = before[field];
+      }
+      recordActivity("undone", before.name, listId);
+      persistList(listId);
+      render();
+      showToast("Cambio deshecho");
+    },
+  });
 }
 
 function impact(style = "light") {
@@ -524,12 +634,14 @@ function saveItemEditor(event) {
     return;
   }
   try {
+    const previousName = item.name;
     updateShoppingItem(item, {
       name: $("#itemEditName").value,
       quantity: $("#itemEditQuantity").value,
       category: $("#itemEditCategory").value,
       photoDataUrl: editingItemPhotoDataUrl,
     });
+    recordActivity("edited", item.name === previousName ? item.name : `${previousName} → ${item.name}`, editingItemListId);
     persistList(editingItemListId);
     closeItemEditor();
     render();
@@ -680,6 +792,8 @@ function setAccountStatus(status) {
 function stopAccountDataSync() {
   clearTimeout(accountWriteTimer);
   accountWriteTimer = null;
+  accountHasUnsavedChanges = false;
+  accountWriteVersion += 1;
   accountPrimarySync?.stop();
   accountPrimarySync = null;
   accountSpecialSyncs.forEach((entry) => entry.sync.stop());
@@ -738,7 +852,9 @@ function renderAccountMemberships() {
 }
 
 function applyRemoteAccountState(remoteState, { initial = false } = {}) {
+  if (accountHasUnsavedChanges) return;
   state = hydrateState(mergeAccountState(remoteState, state));
+  rememberAccountBase(remoteState);
   saveState({ sync: false });
   render();
   if (!initial) showToast("Lista actualizada desde otro móvil");
@@ -813,8 +929,14 @@ async function initializeAccountDataInternal(preferredListId = "") {
   const unifyKey = `${ACCOUNT_UNIFY_KEY_PREFIX}${accountUser.uid}`;
   const needsMigration = !localStorage.getItem(migrationKey);
   const remoteState = remoteList?.state || {};
+  const hasPendingLocalChanges = localStorage.getItem(ACCOUNT_UNSAVED_KEY)
+    === `${accountUser.uid}:${accountPrimaryList.id}`;
+  if (hasPendingLocalChanges) {
+    accountHasUnsavedChanges = true;
+    accountWriteVersion += 1;
+  }
   const needsUnification = !localStorage.getItem(unifyKey)
-    && (familyLists.length > 1 || Boolean(familyId) || needsMigration);
+    && !hasPendingLocalChanges && (familyLists.length > 1 || Boolean(familyId) || needsMigration);
   let recoveryState = accountStateFrom(state);
   familyLists.forEach((entry) => {
     recoveryState = mergeFamilyStates(recoveryState, entry.state || {});
@@ -832,7 +954,7 @@ async function initializeAccountDataInternal(preferredListId = "") {
       ? "He reunido tus listas en la compartida"
       : "He guardado tu lista actual en tu cuenta");
   } else {
-    applyRemoteAccountState(remoteState, { initial: true });
+    if (!hasPendingLocalChanges) applyRemoteAccountState(remoteState, { initial: true });
     if (needsUnification) localStorage.setItem(unifyKey, "1");
   }
 
@@ -843,6 +965,7 @@ async function initializeAccountDataInternal(preferredListId = "") {
   });
   await accountPrimarySync.ready;
   initialAccountRefresh = false;
+  if (hasPendingLocalChanges) flushAccountPrimarySync();
   await Promise.all(accountMemberships
     .filter((entry) => entry.type === "special")
     .map((entry) => initializeAccountSpecialMembership(entry).catch(() => {})));
@@ -1007,17 +1130,21 @@ function renderFamilySharing() {
       synced: "Guardada y sincronizada para las personas autorizadas.",
       offline: "Sin conexión. Los cambios se sincronizarán cuando vuelva Internet.",
     };
-    status.textContent = accountStatus === "synced" && Number(accountPrimaryList?.memberCount) > 1
-      ? "Compartida y sincronizada con tu familia."
-      : copy[accountStatus] || "Preparando tu lista privada…";
+    status.textContent = accountHasUnsavedChanges
+      ? accountStatus === "offline"
+        ? "Guardada en este móvil. Pendiente de enviarse a los demás; volveré a intentarlo."
+        : "Guardando cambios para los demás dispositivos…"
+      : accountStatus === "synced" && Number(accountPrimaryList?.memberCount) > 1
+        ? "Compartida y sincronizada con tu familia."
+        : copy[accountStatus] || "Preparando tu lista privada…";
     const owner = accountPrimaryList?.role === "owner";
     shareButton.hidden = !owner;
     shareButton.textContent = "Invitar por WhatsApp";
     membersButton.hidden = !accountPrimaryList;
     disconnectButton.hidden = true;
     badge.hidden = false;
-    badge.className = `family-badge ${accountStatus}`;
-    badge.textContent = accountStatus === "synced"
+    badge.className = `family-badge ${accountHasUnsavedChanges ? "pending" : accountStatus}`;
+    badge.textContent = accountHasUnsavedChanges ? "Pendiente" : accountStatus === "synced"
       ? Number(accountPrimaryList?.memberCount) > 1 ? "Compartida" : "Privada"
       : accountStatus === "offline" ? "Sin conexión" : "Conectando";
     return;
@@ -1272,6 +1399,10 @@ async function removeAccountMember(uid) {
 
 async function switchAccountFamilyList(listId) {
   if (!accountUser || listId === accountPrimaryList?.id) return;
+  if (accountHasUnsavedChanges) {
+    showToast("Espera a que se guarden los cambios pendientes");
+    return;
+  }
   $("#settingsDialog").close();
   await initializeAccountData(listId);
   activeListId = "main";
@@ -1280,6 +1411,10 @@ async function switchAccountFamilyList(listId) {
 }
 
 async function handleAccountSignOut() {
+  if (accountHasUnsavedChanges) {
+    showToast("Espera a que se guarden los cambios pendientes");
+    return;
+  }
   stopAccountDataSync();
   await signOutAccount();
   accountUser = null;
@@ -1696,6 +1831,14 @@ function renderHistory() {
     <article><strong>${purchases}</strong><span>${purchases === 1 ? "producto comprado" : "productos comprados"}</span></article>
     <article class="wide"><strong>${mostRequested ? escapeHtml(mostRequested.name) : "—"}</strong><span>lo más pedido</span></article>`;
 
+  const activity = $("#activityContent");
+  if (activity) {
+    const entries = mergeActivity(state.activity).slice(0, 12);
+    activity.innerHTML = `<h2>Actividad de la lista habitual</h2>${entries.length
+      ? `<div class="activity-list">${entries.map((entry) => `<div><span>${escapeHtml(describeActivity(entry))}</span><time datetime="${escapeHtml(entry.at)}">${escapeHtml(new Date(entry.at).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</time></div>`).join("")}</div>`
+      : '<p>Los próximos cambios hechos en la app aparecerán aquí.</p>'}`;
+  }
+
   const content = $("#historyContent");
   if (!state.purchases.length) {
     content.innerHTML = `<div class="history-empty"><h3>Todavía no hay compras guardadas</h3><p>En la tienda, marca lo que metas en la cesta y pulsa “Terminar compra”.</p></div>`;
@@ -1737,6 +1880,7 @@ function addEntries(entries, options = {}) {
     } else {
       targetItems.push(makeItem(entry));
       if (targetListId === "main") registerRequest(state, entry);
+      recordActivity("added", entry.name, targetListId);
       addedNames.push(entry.name);
     }
   });
@@ -1772,6 +1916,7 @@ function resolveDuplicate(addMore) {
   if (existing && addMore) {
     existing.quantity += currentDuplicate.entry.quantity || 1;
     if (listId === "main") registerRequest(state, currentDuplicate.entry);
+    recordActivity("edited", existing.name, listId);
     showToast(`Cantidad de ${existing.name}: ${existing.quantity}`);
   }
   $("#duplicateDialog").close();
@@ -1815,6 +1960,7 @@ function finishShopping() {
   const checked = state.items.filter((item) => item.checked);
   const delicate = checked.filter(isPerishable);
   checked.forEach((item, index) => registerPurchase(state, item, now + index));
+  checked.forEach((item) => recordActivity("purchased", item.name, "main"));
   state.items = state.items.filter((item) => !item.checked);
   shoppingMode = false;
   $("#finishDialog").close();
@@ -2432,13 +2578,18 @@ document.addEventListener("click", (event) => {
     const item = items.find((entry) => entry.id === itemElement.dataset.itemId);
     if (!item) return;
     const action = itemAction.dataset.action;
+    const before = { ...item };
     if (action === "toggle") item.checked = !item.checked;
     if (action === "increase") item.quantity += 1;
     if (action === "decrease") item.quantity = Math.max(1, item.quantity - 1);
     if (action === "remove") replaceListItems(activeListId, items.filter((entry) => entry.id !== item.id));
+    if (action === "decrease" && before.quantity === item.quantity) return;
+    const after = action === "remove" ? null : { ...item };
+    recordActivity(action === "toggle" ? item.checked ? "checked" : "unchecked" : action === "remove" ? "removed" : "edited", before.name);
     persistList();
     render();
     impact("light");
+    offerItemUndo(activeListId, before, after, action);
   }
 
   const suggestion = event.target.closest("[data-suggest-key]");
@@ -2509,7 +2660,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=35");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=36");
   serviceWorkerRegistration.update().catch(() => {});
 }
 

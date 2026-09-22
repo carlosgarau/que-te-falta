@@ -159,3 +159,52 @@ test("Siri publishes the natural Spanish phrase for missing products", async () 
   assert.equal(intents.includes('"Faltan \\(\\.$product) en \\(.applicationName)"'), true);
   assert.match(intents, /static var openAppWhenRun = false/u);
 });
+
+async function spokenList(state, listName = "Lista habitual") {
+  const source = await readFile(new URL("./ios/App/App/SiriShoppingStore.swift", import.meta.url), "utf8");
+  const script = source.match(/static let pendingListScript = #"""([\s\S]*?)"""#/u)?.[1];
+  assert.ok(script, "the test must execute the exact JavaScriptCore formatter shipped in Swift");
+  const context = vm.createContext({});
+  vm.runInContext(script, context);
+  return context.SiriPendingList(state, listName);
+}
+
+test("Siri reads only pending items from the chosen list, preserving quantities and units", async () => {
+  const state = { items: [
+    { name: "Patatas", quantity: 2, unit: "kilos", checked: false },
+    { name: "Leche", quantity: 3, unit: "", checked: false },
+    { name: "Pan", quantity: 1, unit: "", checked: false },
+    { name: "Huevos", quantity: 6, unit: "", checked: true },
+  ] };
+  assert.equal(await spokenList(state, "Lista Navidad"), "En Lista Navidad faltan: 2 kilos de Patatas, 3 de Leche, Pan.");
+  assert.equal(state.items.length, 4, "the read action must not mutate the list");
+});
+
+test("Siri distinguishes an empty list from a list whose items were all checked", async () => {
+  assert.equal(await spokenList({ items: [] }), "En Lista habitual no quedan productos pendientes.");
+  assert.equal(await spokenList({ items: [{ name: "Pan", quantity: 1, checked: true }] }), "En Lista habitual no quedan productos pendientes.");
+});
+
+test("Siri never fabricates a spoken list from malformed or missing remote state", async () => {
+  await assert.rejects(spokenList({}, "Lista habitual"), /lista válida/u);
+  await assert.rejects(spokenList({ items: [{ name: "", quantity: 2, checked: false }] }), /producto pendiente/u);
+  await assert.rejects(spokenList({ items: [{ name: "Pan", quantity: 0, checked: false }] }), /producto pendiente/u);
+});
+
+test("The native read intent uses the current authenticated remote list without opening the app", async () => {
+  const intents = await readFile(new URL("./ios/App/App/ShoppingIntents.swift", import.meta.url), "utf8");
+  const store = await readFile(new URL("./ios/App/App/SiriShoppingStore.swift", import.meta.url), "utf8");
+  const action = intents.split("struct ReadPendingShoppingList: AppIntent {")[1]?.split("struct ShoppingShortcuts:")[0];
+  assert.ok(action);
+  assert.match(action, /static var openAppWhenRun = false/u);
+  assert.match(action, /SiriShoppingStore\.readyUser\(\)/u);
+  assert.match(action, /SiriShoppingStore\.preferredList\(in: lists\)/u);
+  assert.match(action, /requestDisambiguation\(among: lists/u);
+  assert.match(action, /SiriShoppingStore\.read\(listId: target\.id\)/u);
+  assert.match(action, /SiriShoppingStore\.pendingListDialog\(snapshot: snapshot/u);
+  assert.match(intents, /"Qué falta en \\\(\.applicationName\)"/u);
+  assert.equal(intents.includes('"Qué falta en la lista \\(\\.$list) de \\(.applicationName)"'), true);
+  assert.match(store, /cachePolicy: \.reloadIgnoringLocalCacheData/u);
+  assert.match(store, /No puedo conectar con tu lista/u);
+  assert.match(store, /snapshot\.state\["items"\] is \[\[String: Any\]\]/u);
+});

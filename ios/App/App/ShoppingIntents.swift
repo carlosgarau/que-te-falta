@@ -104,6 +104,50 @@ struct AddShoppingProduct: AppIntent {
 }
 
 @available(iOS 16.0, *)
+struct ReadPendingShoppingList: AppIntent {
+    static var title: LocalizedStringResource = "Leer productos pendientes"
+    static var description = IntentDescription("Lee en voz alta los productos pendientes de la lista elegida en Qué te falta. Requiere una sesión iniciada y conexión a Internet.")
+    static var openAppWhenRun = false
+    static var authenticationPolicy: IntentAuthenticationPolicy = .alwaysAllowed
+
+    @Parameter(title: "Lista")
+    var list: ShoppingListEntity?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Leer productos pendientes de \(\.$list)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let initialUid = try await SiriShoppingStore.readyUser().uid
+        let lists = try await SiriShoppingStore.lists()
+        guard !lists.isEmpty else {
+            throw SiriShoppingError(message: "Abre Qué te falta y crea o acepta una lista antes de consultarla con Siri.")
+        }
+        let target: ShoppingListEntity
+        if let list {
+            guard lists.contains(where: { $0.id == list.id }) else {
+                throw SiriShoppingError(message: "Ya no tienes acceso a esa lista. Elige otra en Qué te falta.")
+            }
+            target = list
+        } else if let preferred = try SiriShoppingStore.preferredList(in: lists) {
+            target = ShoppingListEntity(preferred)
+        } else {
+            target = try await $list.requestDisambiguation(among: lists.map(ShoppingListEntity.init), dialog: "¿Qué lista quieres consultar?")
+        }
+        guard try SiriShoppingStore.user().uid == initialUid else {
+            throw SiriShoppingError(message: "La sesión ha cambiado. Vuelve a preguntar por la lista.")
+        }
+        let snapshot = try await SiriShoppingStore.read(listId: target.id)
+        guard snapshot.uid == initialUid, try SiriShoppingStore.user().uid == initialUid else {
+            throw SiriShoppingError(message: "La sesión ha cambiado. Vuelve a preguntar por la lista.")
+        }
+        let spoken = try SiriShoppingStore.pendingListDialog(snapshot: snapshot, listName: target.name)
+        return .result(dialog: IntentDialog(stringLiteral: spoken))
+    }
+}
+
+@available(iOS 16.0, *)
 struct ShoppingShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: AddShoppingProduct(), phrases: [
@@ -112,6 +156,12 @@ struct ShoppingShortcuts: AppShortcutsProvider {
             "Añade \(\.$product) en \(.applicationName)",
             "Agrega \(\.$product) en \(.applicationName)",
             "Añade un producto en \(.applicationName)"
-        ], shortTitle: "Añadir producto", systemImageName: "cart.badge.plus")
+        ], shortTitle: "Añadir producto", systemImageName: "cart.badge.plus"),
+        AppShortcut(intent: ReadPendingShoppingList(), phrases: [
+            "Qué falta en \(.applicationName)",
+            "Qué falta en la lista \(\.$list) de \(.applicationName)",
+            "Lee la lista de \(.applicationName)",
+            "Lee los productos pendientes en \(.applicationName)"
+        ], shortTitle: "Leer lista pendiente", systemImageName: "list.bullet")
     }
 }

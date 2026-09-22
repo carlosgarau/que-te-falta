@@ -161,6 +161,9 @@ export function mergeFamilyStates(localState, remoteState) {
     purchases: mergeUniqueEntries(local.purchases, remote.purchases, (entry, index) => (
       String(entry.id || `${entry.key || entry.name || "compra"}-${entry.purchasedAt || index}`)
     )).sort((a, b) => String(b.purchasedAt || "").localeCompare(String(a.purchasedAt || ""))).slice(0, 500),
+    activity: mergeUniqueEntries(local.activity, remote.activity, (entry, index) => (
+      String(entry.id || `actividad-${index}`)
+    )).sort((a, b) => String(b.at || "").localeCompare(String(a.at || ""))).slice(0, 100),
     expirations: mergeUniqueEntries(local.expirations, remote.expirations, (entry, index) => (
       String(entry.id || `${entry.key || entry.name || "caducidad"}-${entry.expiresOn || index}`)
     )).slice(0, 300),

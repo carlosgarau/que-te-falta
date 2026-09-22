@@ -350,6 +350,7 @@ export function createInitialState() {
     items: [],
     catalog: {},
     purchases: [],
+    activity: [],
     expirations: [],
     specialLists: [],
     dismissedSuggestions: {},
@@ -373,6 +374,7 @@ export function hydrateState(raw) {
     items: hydrateItems(raw.items),
     catalog: raw.catalog && typeof raw.catalog === "object" ? raw.catalog : {},
     purchases: Array.isArray(raw.purchases) ? raw.purchases : [],
+    activity: Array.isArray(raw.activity) ? raw.activity : [],
     expirations: Array.isArray(raw.expirations) ? raw.expirations : [],
     specialLists: Array.isArray(raw.specialLists)
       ? raw.specialLists.map((list) => ({

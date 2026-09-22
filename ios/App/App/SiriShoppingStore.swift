@@ -104,6 +104,47 @@ enum SiriShoppingStore {
         return SiriSnapshot(uid: uid, state: object as? [String: Any] ?? [:], etag: etag)
     }
 
+    // Keep the spoken-list formatter executable in JavaScriptCore so the exact
+    // production logic can also be exercised by tests-siri.mjs without Xcode.
+    static let pendingListScript = #"""
+    globalThis.SiriPendingList = function (state, listName) {
+        if (!state || !Array.isArray(state.items)) throw new Error("No hay una lista válida");
+        const clean = (value) => typeof value === "string"
+            ? value.replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim()
+            : "";
+        const name = clean(listName) || "la lista";
+        const pending = state.items.filter((item) => item && item.checked !== true);
+        if (!pending.length) return `En ${name} no quedan productos pendientes.`;
+        const products = pending.map((item) => {
+            const product = clean(item.name);
+            const quantity = Number(item.quantity);
+            if (!product || !Number.isFinite(quantity) || quantity <= 0) {
+                throw new Error("Hay un producto pendiente que no se puede leer");
+            }
+            const unit = clean(item.unit);
+            const amount = String(quantity).replace(".", ",");
+            return quantity === 1 && !unit ? product : `${amount} ${unit ? `${unit} de` : "de"} ${product}`;
+        });
+        return `En ${name} faltan: ${products.join(", ")}.`;
+    };
+    """#
+
+    static func pendingListDialog(snapshot: SiriSnapshot, listName: String) throws -> String {
+        // A malformed or absent server state is not a confirmed empty list.
+        guard snapshot.state["items"] is [[String: Any]], let context = JSContext() else {
+            throw SiriShoppingError(message: "No he podido leer la lista actual. Inténtalo de nuevo.")
+        }
+        context.evaluateScript(pendingListScript)
+        guard context.exception == nil,
+              let dialog = context.objectForKeyedSubscript("SiriPendingList")?
+                .call(withArguments: [snapshot.state, listName])?.toString(),
+              context.exception == nil,
+              !dialog.isEmpty else {
+            throw SiriShoppingError(message: "No he podido leer la lista actual. Ábrela para comprobar sus productos.")
+        }
+        return dialog
+    }
+
     static func plan(snapshot: SiriSnapshot, text: String, approved: [String], requestId: String) throws -> SiriPlan {
         let context = try coreContext()
         guard let value = context.objectForKeyedSubscript("SiriShopping")?.objectForKeyedSubscript("planSiriAddition")?
@@ -182,9 +223,15 @@ enum SiriShoppingStore {
         guard let http = response as? HTTPURLResponse else { throw SiriShoppingError(message: "No he recibido respuesta de tu lista.") }
         if allowConflict && http.statusCode == 412 { return (data, http) }
         guard (200..<300).contains(http.statusCode) else {
-            throw SiriShoppingError(message: [401, 403].contains(http.statusCode)
-                ? "Ya no tienes acceso a esa lista o debes iniciar sesión de nuevo en Qué te falta."
-                : "No he podido guardar el producto en tu lista. Inténtalo más tarde.", status: http.statusCode)
+            let message: String
+            if [401, 403].contains(http.statusCode) {
+                message = "Ya no tienes acceso a esa lista o debes iniciar sesión de nuevo en Qué te falta."
+            } else if method == "GET" {
+                message = "No he podido consultar la lista actual. Inténtalo más tarde."
+            } else {
+                message = "No he podido guardar el producto en tu lista. Inténtalo más tarde."
+            }
+            throw SiriShoppingError(message: message, status: http.statusCode)
         }
         return (data, http)
     }

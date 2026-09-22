@@ -1,4 +1,4 @@
-import { AccountStateWriter } from "./account-state-writer.mjs?v=35";
+import { AccountStateWriter } from "./account-state-writer.mjs?v=36";
 
 const FIREBASE_WEB_VERSION = "11.10.0";
 const FIREBASE_CONFIG = Object.freeze({
@@ -220,6 +220,7 @@ export function accountStateFrom(state) {
     items: Array.isArray(state?.items) ? state.items : [],
     catalog: state?.catalog && typeof state.catalog === "object" ? state.catalog : {},
     purchases: Array.isArray(state?.purchases) ? state.purchases : [],
+    activity: Array.isArray(state?.activity) ? state.activity : [],
     expirations: Array.isArray(state?.expirations) ? state.expirations : [],
     dismissedSuggestions: state?.dismissedSuggestions && typeof state.dismissedSuggestions === "object"
       ? state.dismissedSuggestions
