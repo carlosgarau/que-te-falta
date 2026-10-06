@@ -368,7 +368,7 @@ dialog::backdrop { background: rgba(26,35,29,.42); backdrop-filter: blur(5px); }
 .sheet-heading { position: relative; z-index: 4; display: flex; align-items: center; justify-content: space-between; margin: 0 -7px; padding: 0 7px 10px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .sheet-heading h2 { margin: 4px 0 0; font-family: var(--editorial); font-size: 29px; font-weight: 500; }
 .sheet-heading .icon-button { font-size: 25px; }
-.settings-body { min-height: 0; padding-bottom: calc(34px + env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: calc(34px + env(safe-area-inset-bottom)); }
+.settings-body { min-height: 0; padding-bottom: calc(180px + env(safe-area-inset-bottom)); overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scroll-padding-bottom: calc(180px + env(safe-area-inset-bottom)); }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .setting-row strong, .setting-row small { display: block; }
 .setting-row strong { font-size: 13px; }
@@ -449,7 +449,6 @@ input[role="switch"]:checked::after { transform: translateX(18px); }
   .settings-sheet { width: calc(100% - 20px); padding: 10px 18px 0; }
   .sheet-handle { margin-bottom: 12px; }
   .sheet-heading { margin: 0 -4px; padding: 0 4px 8px; }
-  .settings-body { padding-bottom: calc(180px + env(safe-area-inset-bottom)); scroll-padding-bottom: calc(180px + env(safe-area-inset-bottom)); }
   .setting-row { padding: 13px 0; }
   .settings-group { padding: 15px 0; }
   .settings-group > p { margin-bottom: 10px; }

@@ -24,7 +24,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=41";
+} from "./core.mjs?v=42";
 import {
   createFamilyId,
   createFamilySync,
@@ -43,11 +43,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=41";
+} from "./family-sync.mjs?v=42";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=41";
+} from "./secure-sharing.mjs?v=42";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -77,9 +77,9 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=41";
-import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=41";
-import { mergeStateEdits } from "./account-state-writer.mjs?v=41";
+} from "./account-sharing.mjs?v=42";
+import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=42";
+import { mergeStateEdits } from "./account-state-writer.mjs?v=42";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -2676,12 +2676,17 @@ $("#settingsButton").addEventListener("click", () => {
 $("#settingsClose").addEventListener("click", () => $("#settingsDialog").close());
 $("#settingsDangerDetails").addEventListener("toggle", (event) => {
   if (!event.currentTarget.open || !$("#settingsDialog").open) return;
-  requestAnimationFrame(() => {
+  const alignSettingsSection = () => {
     const body = $("#settingsDialog").querySelector(".settings-body");
     const target = body.querySelector(".family-settings");
     const maximum = Math.max(0, body.scrollHeight - body.clientHeight);
     const desired = body.scrollTop + target.getBoundingClientRect().top - body.getBoundingClientRect().top;
-    body.scrollTo({ top: Math.min(maximum, Math.max(0, desired)), behavior: "auto" });
+    body.scrollTop = Math.min(maximum, Math.max(0, desired));
+  };
+  requestAnimationFrame(() => {
+    alignSettingsSection();
+    requestAnimationFrame(alignSettingsSection);
+    setTimeout(alignSettingsSection, 120);
   });
 });
 $("#speakToggle").addEventListener("change", (event) => {
@@ -2713,7 +2718,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=41");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=42");
   serviceWorkerRegistration.update().catch(() => {});
 }
 

@@ -29,8 +29,8 @@ await new Promise((accept) => server.listen(0, "127.0.0.1", accept));
 const port = server.address().port;
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_EXE || undefined });
 try {
-  for (const width of [1440, 390, 320]) {
-    const page = await browser.newPage({ viewport: { width, height: width === 1440 ? 900 : 844 }, deviceScaleFactor: 1 });
+  for (const width of [1440, 480, 390, 320]) {
+    const page = await browser.newPage({ viewport: { width, height: width === 1440 ? 900 : width === 480 ? 1040 : 844 }, deviceScaleFactor: 1 });
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
     const assertHeaderVisible = async (state) => {
@@ -224,7 +224,7 @@ try {
         if (headerCollision.collides) throw new Error(`La marca invade los estados de cabecera: ${JSON.stringify(headerCollision)}`);
       }
       await page.screenshot({ path: resolve(output, `${mode}-${width}.png`) });
-      if (width <= 390) {
+      if (width <= 520) {
         await page.locator("#settingsButton").click();
         await page.locator(".settings-body").evaluate((body) => { body.scrollTop = 0; });
         await page.waitForTimeout(250);
@@ -267,16 +267,8 @@ try {
           throw new Error(`Ajustes muestra controles parcialmente recortados en ${width}px: ${partialInitialActions.join(", ")}`);
         }
         await page.screenshot({ path: resolve(output, `${mode}-ajustes-${width}.png`) });
-        await page.locator(".settings-danger-details").evaluate((details) => { details.open = true; });
-        await page.locator(".settings-body").evaluate((body) => {
-          const firstCompleteGroup = body.querySelector(".family-settings");
-          const maximum = Math.max(0, body.scrollHeight - body.clientHeight);
-          const desired = firstCompleteGroup
-            ? body.scrollTop + firstCompleteGroup.getBoundingClientRect().top - body.getBoundingClientRect().top
-            : maximum;
-          body.scrollTop = Math.min(maximum, Math.max(0, desired));
-        });
-        await page.waitForTimeout(150);
+        await page.locator(".settings-danger-details summary").click();
+        await page.waitForTimeout(250);
         const settingsHeaderVisible = await page.locator("#settingsDialog").evaluate((dialog) => {
           const selectors = [".sheet-handle", ".sheet-heading h2", "#settingsClose"];
           return selectors.every((selector) => {
@@ -289,7 +281,7 @@ try {
           const bodyRect = dialog.querySelector(".settings-body").getBoundingClientRect();
           const familyRect = dialog.querySelector(".family-settings").getBoundingClientRect();
           const accountRect = dialog.querySelector(".account-settings").getBoundingClientRect();
-          return familyRect.top >= bodyRect.top - 1 && accountRect.bottom <= bodyRect.top + 1;
+          return Math.abs(familyRect.top - bodyRect.top) <= 1 && accountRect.bottom <= bodyRect.top + 1;
         });
         if (!settingsBodyStartsCleanly) throw new Error(`Ajustes deja una sección parcialmente recortada al desplazar en ${width}px`);
         const finalActionVisible = await page.locator("#deleteAccountButton").evaluate((button) => {
