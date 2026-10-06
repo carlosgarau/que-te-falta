@@ -369,6 +369,8 @@ dialog::backdrop { background: rgba(26,35,29,.42); backdrop-filter: blur(5px); }
 .sheet-heading h2 { margin: 4px 0 0; font-family: var(--editorial); font-size: 29px; font-weight: 500; }
 .sheet-heading .icon-button { font-size: 25px; }
 .settings-body { min-height: 0; padding-bottom: calc(180px + env(safe-area-inset-bottom)); overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scroll-padding-bottom: calc(180px + env(safe-area-inset-bottom)); }
+.settings-body.privacy-focused > .setting-row,
+.settings-body.privacy-focused > .account-settings { display: none; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .setting-row strong, .setting-row small { display: block; }
 .setting-row strong { font-size: 13px; }

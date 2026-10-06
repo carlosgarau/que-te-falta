@@ -765,12 +765,12 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=42/u);
-  assert.match(index, /app\.mjs\?v=42/u);
-  assert.match(app, /service-worker\.js\?v=42/u);
-  assert.match(worker, /que-te-falta-v42/u);
+  assert.match(index, /styles\.css\?v=43/u);
+  assert.match(index, /app\.mjs\?v=43/u);
+  assert.match(app, /service-worker\.js\?v=43/u);
+  assert.match(worker, /que-te-falta-v43/u);
   assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=41/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=42/u);
 });
 
 test("los ajustes esconden las acciones sensibles y mantienen enlaces táctiles", async () => {
@@ -784,8 +784,9 @@ test("los ajustes esconden las acciones sensibles y mantienen enlaces táctiles"
   assert.match(capture, /partialInitialActions/u);
   assert.match(index, /<button class="import-button" id="importButton"/u);
   assert.match(index, /id="importInput"[^>]*hidden/u);
-  assert.match(app, /settingsDangerDetails[\s\S]*alignSettingsSection[\s\S]*family-settings[\s\S]*requestAnimationFrame[\s\S]*setTimeout\(alignSettingsSection/u);
+  assert.match(app, /settingsDangerDetails[\s\S]*privacy-focused[\s\S]*focusPrivacySettings[\s\S]*requestAnimationFrame[\s\S]*setTimeout\(focusPrivacySettings/u);
   assert.match(styles, /\.settings-body \{[^}]*overflow-anchor: none[^}]*padding-bottom: calc\(180px/u);
+  assert.match(styles, /\.settings-body\.privacy-focused > \.setting-row,[\s\S]*\.account-settings \{ display: none; \}/u);
   assert.match(capture, /\[1440, 480, 390, 320\]/u);
   assert.match(styles, /\.account-cancel \{[^}]*min-height: 48px[^}]*background: #f0f3e7/u);
   assert.match(styles, /@media \(max-width: 360px\)[\s\S]*\.item-edit-row \{ grid-template-columns: 1fr; \}/u);
