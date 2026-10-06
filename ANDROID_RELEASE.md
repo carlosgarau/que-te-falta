@@ -8,7 +8,7 @@ La aplicación Android reutiliza la misma interfaz, datos y lógica que las vers
 - Compatibilidad mínima: Android 7.0 (API 24).
 - Objetivo de compilación: Android API 36.
 - Micrófono, lectura de órdenes, notificaciones de caducidad y hoja de compartir conectados a sus complementos nativos.
-- Icono adaptativo y pantalla de arranque propios de «¿Qué te falta?», sin recursos predeterminados de Capacitor.
+- Icono adaptativo y pantalla de arranque propios de «¿Qué te falta?», con la misma nota marcada de la interfaz y sin recursos predeterminados de Capacitor.
 - Los enlaces `lacompra://?command=...` y `lacompra://?invitacion=...` abren la aplicación y entregan la orden o invitación.
 - La URL compartida de la web está declarada como Android App Link y la app procesa directamente su parámetro `invitacion`.
 - Cada cambio en la rama `codex/android` genera automáticamente una APK de prueba en GitHub Actions.

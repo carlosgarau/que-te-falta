@@ -765,12 +765,12 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=44/u);
-  assert.match(index, /app\.mjs\?v=44/u);
-  assert.match(app, /service-worker\.js\?v=44/u);
-  assert.match(worker, /que-te-falta-v44/u);
+  assert.match(index, /styles\.css\?v=45/u);
+  assert.match(index, /app\.mjs\?v=45/u);
+  assert.match(app, /service-worker\.js\?v=45/u);
+  assert.match(worker, /que-te-falta-v45/u);
   assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=43/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=44/u);
 });
 
 test("la versión Android usa identidad propia y textos coherentes con el sistema", async () => {
@@ -794,6 +794,8 @@ test("la versión Android usa identidad propia y textos coherentes con el sistem
   assert.match(adaptive, /@drawable\/ic_launcher_foreground/u);
   assert.match(foreground, /#F7F4EC/u);
   assert.match(foreground, /#D9EB9E/u);
+  assert.match(foreground, /M142,86 L292,86 L374,168/u);
+  assert.doesNotMatch(foreground, /M136,207|M373,87/u);
   assert.match(splash, /@drawable\/splash_mark/u);
   assert.equal(resources.some((path) => /ic_launcher_foreground\.png$/u.test(path)), false);
   assert.equal(resources.some((path) => /(?:^|[\\/])splash\.png$/u.test(path)), false);

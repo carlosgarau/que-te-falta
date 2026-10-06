@@ -61,6 +61,8 @@ assert.match(gradle, new RegExp(`applicationId "${expected.androidPackage.replac
 assert.match(gradle, /bundleRelease/u);
 assert.match(launcher, /#F7F4EC/u);
 assert.match(launcher, /#D9EB9E/u);
+assert.match(launcher, /M142,86 L292,86 L374,168/u);
+assert.doesNotMatch(launcher, /M136,207|M373,87/u);
 assert.match(splash, /@drawable\/splash_mark/u);
 assert.equal(androidResources.some((path) => /ic_launcher_foreground\.png$/u.test(path)), false);
 assert.equal(androidResources.some((path) => /(?:^|[\\/])splash\.png$/u.test(path)), false);

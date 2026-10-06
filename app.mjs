@@ -24,7 +24,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=44";
+} from "./core.mjs?v=45";
 import {
   createFamilyId,
   createFamilySync,
@@ -43,11 +43,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=44";
+} from "./family-sync.mjs?v=45";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=44";
+} from "./secure-sharing.mjs?v=45";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -77,9 +77,9 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=44";
-import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=44";
-import { mergeStateEdits } from "./account-state-writer.mjs?v=44";
+} from "./account-sharing.mjs?v=45";
+import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=45";
+import { mergeStateEdits } from "./account-state-writer.mjs?v=45";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -2722,7 +2722,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=44");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=45");
   serviceWorkerRegistration.update().catch(() => {});
 }
 
