@@ -765,12 +765,12 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=38/u);
-  assert.match(index, /app\.mjs\?v=38/u);
-  assert.match(app, /service-worker\.js\?v=38/u);
-  assert.match(worker, /que-te-falta-v38/u);
+  assert.match(index, /styles\.css\?v=39/u);
+  assert.match(index, /app\.mjs\?v=39/u);
+  assert.match(app, /service-worker\.js\?v=39/u);
+  assert.match(worker, /que-te-falta-v39/u);
   assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=37/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=38/u);
 });
 
 test("los estados de revisión no enseñan correos ficticios ni concordancias dudosas", async () => {

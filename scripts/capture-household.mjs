@@ -226,11 +226,57 @@ try {
       await page.screenshot({ path: resolve(output, `${mode}-${width}.png`) });
       if (width <= 390) {
         await page.locator("#settingsButton").click();
+        await page.locator(".settings-body").evaluate((body) => { body.scrollTop = 0; });
         await page.waitForTimeout(250);
+        const initialSettingsLayout = await page.locator("#settingsDialog").evaluate((dialog) => {
+          const compact = (element) => {
+            const rect = element.getBoundingClientRect();
+            return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+          };
+          return {
+            viewport: { width: innerWidth, height: innerHeight, scrollY },
+            dialog: compact(dialog),
+            handle: compact(dialog.querySelector(".sheet-handle")),
+            title: compact(dialog.querySelector(".sheet-heading h2")),
+            close: compact(dialog.querySelector("#settingsClose")),
+            bodyScrollTop: dialog.querySelector(".settings-body").scrollTop,
+          };
+        });
+        if (
+          initialSettingsLayout.dialog.top < 0
+          || initialSettingsLayout.handle.top < 0
+          || initialSettingsLayout.title.top < 0
+          || initialSettingsLayout.close.top < 0
+          || initialSettingsLayout.close.right > initialSettingsLayout.viewport.width
+          || initialSettingsLayout.bodyScrollTop > 1
+        ) {
+          throw new Error(`Ajustes no abre completamente encuadrado en ${width}px: ${JSON.stringify(initialSettingsLayout)}`);
+        }
         await assertTouchTargets(`${mode} ajustes`);
         await page.screenshot({ path: resolve(output, `${mode}-ajustes-${width}.png`) });
-        await page.locator(".settings-body").evaluate((body) => { body.scrollTop = body.scrollHeight; });
+        await page.locator(".settings-body").evaluate((body) => {
+          const firstCompleteGroup = body.querySelector(".account-settings");
+          const maximum = Math.max(0, body.scrollHeight - body.clientHeight);
+          const desired = firstCompleteGroup
+            ? body.scrollTop + firstCompleteGroup.getBoundingClientRect().top - body.getBoundingClientRect().top
+            : maximum;
+          body.scrollTop = Math.min(maximum, Math.max(0, desired));
+        });
         await page.waitForTimeout(150);
+        const settingsHeaderVisible = await page.locator("#settingsDialog").evaluate((dialog) => {
+          const selectors = [".sheet-handle", ".sheet-heading h2", "#settingsClose"];
+          return selectors.every((selector) => {
+            const rect = dialog.querySelector(selector)?.getBoundingClientRect();
+            return rect && rect.top >= 0 && rect.left >= 0 && rect.bottom <= innerHeight && rect.right <= innerWidth;
+          });
+        });
+        if (!settingsHeaderVisible) throw new Error(`La cabecera de Ajustes queda recortada al desplazar en ${width}px`);
+        const settingsBodyStartsCleanly = await page.locator("#settingsDialog").evaluate((dialog) => {
+          const bodyRect = dialog.querySelector(".settings-body").getBoundingClientRect();
+          const accountRect = dialog.querySelector(".account-settings").getBoundingClientRect();
+          return accountRect.top >= bodyRect.top - 1;
+        });
+        if (!settingsBodyStartsCleanly) throw new Error(`Ajustes deja una sección parcialmente recortada al desplazar en ${width}px`);
         const finalActionVisible = await page.locator("#deleteAccountButton").evaluate((button) => {
           const rect = button.getBoundingClientRect();
           return rect.top >= 0 && rect.bottom <= innerHeight;

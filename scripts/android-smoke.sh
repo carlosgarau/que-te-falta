@@ -14,7 +14,6 @@ adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb shell am start -W -n "$activity" >/dev/null
 sleep 10
-adb exec-out screencap -p > "$output/acceso-android.png"
 
 dump_ui() {
   local attempt
@@ -58,6 +57,8 @@ PY
 }
 
 dump_ui
+sleep 2
+adb exec-out screencap -p > "$output/acceso-android.png"
 if ! tap_text "Seguir sin cuenta" && ! tap_text "Ahora no"; then
   echo "No se encontró la acción para continuar sin cuenta en Android" >&2
   exit 1
@@ -66,10 +67,27 @@ sleep 3
 adb exec-out screencap -p > "$output/lista-vacia-android.png"
 
 dump_ui
-if tap_text "Apunta un producto"; then
+if coordinates="$(python3 - "$output/window.xml" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+for node in ET.parse(sys.argv[1]).iter("node"):
+    if node.attrib.get("class") != "android.widget.EditText":
+        continue
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if match:
+        left, top, right, bottom = map(int, match.groups())
+        print((left + right) // 2, (top + bottom) // 2)
+        break
+PY
+)" && test -n "$coordinates"; then
+  adb shell input tap $coordinates
   adb shell input text "Tomates"
   adb shell input keyevent 66
-  sleep 2
+  sleep 3
+  adb shell input keyevent 4 || true
+  sleep 1
   adb exec-out screencap -p > "$output/lista-con-producto-android.png"
 fi
 
