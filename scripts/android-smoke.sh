@@ -10,13 +10,27 @@ test -s "$apk"
 mkdir -p "$output"
 adb install -r "$apk"
 adb shell pm clear "$package" >/dev/null
+adb shell input keyevent KEYCODE_WAKEUP || true
+adb shell wm dismiss-keyguard || true
 adb shell am start -W -n "$activity" >/dev/null
-sleep 8
+sleep 10
 adb exec-out screencap -p > "$output/acceso-android.png"
 
 dump_ui() {
-  adb shell uiautomator dump /sdcard/window.xml >/dev/null
-  adb pull /sdcard/window.xml "$output/window.xml" >/dev/null
+  local attempt
+  adb shell rm -f /sdcard/window.xml >/dev/null 2>&1 || true
+  for attempt in $(seq 1 15); do
+    if adb shell uiautomator dump --compressed /sdcard/window.xml >/dev/null 2>&1 \
+      && adb pull /sdcard/window.xml "$output/window.xml" >/dev/null 2>&1 \
+      && grep -q '<hierarchy' "$output/window.xml"; then
+      return 0
+    fi
+    echo "Esperando a que la interfaz Android sea accesible ($attempt/15)..."
+    sleep 2
+  done
+  echo "No se pudo leer la jerarquía de la pantalla Android" >&2
+  adb shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' || true
+  return 1
 }
 
 tap_text() {

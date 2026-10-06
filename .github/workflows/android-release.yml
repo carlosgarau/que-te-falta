@@ -142,11 +142,12 @@ jobs:
           script: bash scripts/android-smoke.sh
 
       - name: Guardar evidencia Android instalada
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: que-te-falta-android-smoke-${{ env.ANDROID_VERSION_NAME }}-${{ env.ANDROID_VERSION_CODE }}
           path: android-smoke/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Preparar credencial de Google Play
