@@ -121,9 +121,15 @@ adb exec-out screencap -p > "$output/editar-producto-android.png"
 dump_ui
 if tap_text "Elegir foto"; then
   sleep 2
-  current_focus="$(adb shell dumpsys window windows | grep -m1 'mCurrentFocus' || true)"
-  if [[ "$current_focus" == *"$package"* ]]; then
-    echo "El selector de fotos no ha salido de la aplicación: $current_focus" >&2
+  dump_ui
+  if ! grep -Eqi "photos you select|No photos or videos|Photos|Albums|Fotos|Álbumes|Seleccionar fotos" "$output/window.xml"; then
+    echo "El primer toque no abrió el selector; usando la posición verificada del botón"
+    adb shell input tap 610 2000
+    sleep 2
+    dump_ui
+  fi
+  if ! grep -Eqi "photos you select|No photos or videos|Photos|Albums|Fotos|Álbumes|Seleccionar fotos" "$output/window.xml"; then
+    echo "El selector nativo de fotos no llegó a mostrarse" >&2
     exit 1
   fi
   adb exec-out screencap -p > "$output/selector-foto-android.png"
