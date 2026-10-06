@@ -25,7 +25,7 @@ jobs:
   release-aab:
     name: Firmar y preparar Google Play
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     environment: google-play
     env:
       ANDROID_VERSION_NAME: "1.0.4"
@@ -113,6 +113,29 @@ jobs:
         with:
           name: que-te-falta-android-${{ env.ANDROID_VERSION_NAME }}-${{ env.ANDROID_VERSION_CODE }}
           path: ${{ env.AAB_PATH }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Crear APK para comprobación visual
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Ejecutar el candidato en Android
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash scripts/android-smoke.sh
+
+      - name: Guardar evidencia Android instalada
+        uses: actions/upload-artifact@v4
+        with:
+          name: que-te-falta-android-smoke-${{ env.ANDROID_VERSION_NAME }}-${{ env.ANDROID_VERSION_CODE }}
+          path: android-smoke/
           if-no-files-found: error
           retention-days: 14
 

@@ -765,11 +765,12 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=37/u);
-  assert.match(index, /app\.mjs\?v=37/u);
-  assert.match(app, /service-worker\.js\?v=37/u);
-  assert.match(worker, /que-te-falta-v37/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=36/u);
+  assert.match(index, /styles\.css\?v=38/u);
+  assert.match(index, /app\.mjs\?v=38/u);
+  assert.match(app, /service-worker\.js\?v=38/u);
+  assert.match(worker, /que-te-falta-v38/u);
+  assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=37/u);
 });
 
 test("los estados de revisión no enseñan correos ficticios ni concordancias dudosas", async () => {
@@ -792,6 +793,8 @@ test("la interfaz conserva la identidad de nota de cocina compartida", async () 
   assert.match(index, /NOTA DE COCINA · POR VOZ/u);
   assert.match(index, /LA NOTA DE CASA/u);
   assert.match(styles, /--paper-corner:/u);
+  assert.match(styles, /@font-face[\s\S]*font-family: "Lora App"[\s\S]*fonts\/Lora-Variable\.ttf/u);
+  assert.ok((await readFile(new URL("./fonts/Lora-Variable.ttf", import.meta.url))).byteLength > 100_000);
   assert.match(styles, /\.category-group \{[^}]*border-left: 4px solid var\(--category-color\)/u);
   assert.match(styles, /\.bottom-nav button\.active \{[^}]*box-shadow: inset 0 -3px 0 var\(--green\)/u);
   assert.match(app, /document\.querySelector\("\.app-shell > main"\)\?\.scrollTo/u);
@@ -863,6 +866,11 @@ test("ajustes respeta la zona visible del navegador móvil", async () => {
   const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
   assert.match(app, /window\.visualViewport\?\.height/u);
   assert.match(styles, /--visible-viewport-height/u);
-  assert.match(styles, /\.sheet-heading \{ position: sticky;/u);
+  assert.match(styles, /\.settings-sheet \{[^}]*grid-template-rows: auto auto minmax\(0, 1fr\)/u);
+  assert.match(styles, /\.settings-sheet\[open\] \{ display: grid; \}/u);
+  assert.match(styles, /\.settings-body \{[^}]*overflow-y: auto/u);
+  assert.match(styles, /\.sheet-heading \{[^}]*background: var\(--surface\)/u);
+  assert.match(styles, /\.expiration-card-actions button \{ min-height: 44px/u);
+  assert.match(styles, /\.icon-button \{[^}]*width: 44px; height: 44px/u);
 });
 

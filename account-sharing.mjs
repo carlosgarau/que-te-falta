@@ -1,4 +1,4 @@
-import { AccountStateWriter } from "./account-state-writer.mjs?v=36";
+import { AccountStateWriter } from "./account-state-writer.mjs?v=38";
 
 const FIREBASE_WEB_VERSION = "11.10.0";
 const FIREBASE_CONFIG = Object.freeze({

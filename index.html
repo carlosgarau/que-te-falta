@@ -8,10 +8,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="¿Qué te falta?" />
     <meta name="description" content="Tu lista familiar, con voz, memoria y sugerencias útiles." />
-    <link rel="manifest" href="manifest.webmanifest?v=37" />
+    <link rel="manifest" href="manifest.webmanifest?v=38" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="stylesheet" href="styles.css?v=37" />
+    <link rel="stylesheet" href="styles.css?v=38" />
     <title>¿Qué te falta?</title>
   </head>
   <body>
@@ -382,48 +382,50 @@
         <div><span class="eyebrow">PREFERENCIAS</span><h2>Ajustes</h2></div>
         <button class="icon-button" id="settingsClose" type="button" aria-label="Cerrar">×</button>
       </div>
-      <label class="setting-row">
-        <span><strong>Confirmaciones por voz</strong><small>La app te responde al añadir y ante repetidos.</small></span>
-        <input id="speakToggle" type="checkbox" role="switch" />
-      </label>
-      <div class="settings-group account-settings">
-        <strong>Tu cuenta</strong>
-        <div class="account-summary" id="accountSummary">
-          <span class="account-avatar" id="accountAvatar" aria-hidden="true">?</span>
-          <span><b id="accountName">Sin iniciar sesión</b><small id="accountEmail">Puedes usar la app sin cuenta.</small></span>
+      <div class="settings-body">
+        <label class="setting-row">
+          <span><strong>Confirmaciones por voz</strong><small>La app te responde al añadir y ante repetidos.</small></span>
+          <input id="speakToggle" type="checkbox" role="switch" />
+        </label>
+        <div class="settings-group account-settings">
+          <strong>Tu cuenta</strong>
+          <div class="account-summary" id="accountSummary">
+            <span class="account-avatar" id="accountAvatar" aria-hidden="true">?</span>
+            <span><b id="accountName">Sin iniciar sesión</b><small id="accountEmail">Puedes usar la app sin cuenta.</small></span>
+          </div>
+          <div class="settings-actions account-actions">
+            <button class="family-share-button" id="accountSignInButton" type="button">Iniciar sesión</button>
+            <button id="accountSignOutButton" type="button" hidden>Cerrar sesión</button>
+          </div>
         </div>
-        <div class="settings-actions account-actions">
-          <button class="family-share-button" id="accountSignInButton" type="button">Iniciar sesión</button>
-          <button id="accountSignOutButton" type="button" hidden>Cerrar sesión</button>
+        <div class="settings-group family-settings">
+          <strong>Lista familiar compartida</strong>
+          <p id="familyStatus">Inicia sesión para compartirla de forma privada.</p>
+          <div class="settings-actions family-actions">
+            <button class="family-share-button" id="familyShareButton" type="button">Invitar por WhatsApp</button>
+            <button id="familyMembersButton" type="button" hidden>Ver personas</button>
+            <button id="familyDisconnectButton" type="button" hidden>Dejar de compartir</button>
+          </div>
+          <div class="account-list-memberships" id="accountListMemberships"></div>
+          <small class="family-privacy">Cada familiar entra con Google o Apple. Puedes quitar su acceso cuando quieras.</small>
         </div>
+        <div class="settings-group">
+          <strong>Tus datos</strong>
+          <p>La app conserva una copia en este móvil. Si compartes la lista, también la mantiene al día en tus otros dispositivos y para las personas invitadas.</p>
+          <div class="settings-actions">
+            <button id="exportButton" type="button">Exportar copia</button>
+            <label class="import-button">Importar copia<input id="importInput" type="file" accept="application/json" /></label>
+          </div>
+        </div>
+        <button class="danger-button" id="clearButton" type="button">Borrar lista e historial</button>
+        <button class="danger-button account-delete" id="deleteAccountButton" type="button" hidden>Eliminar mi cuenta y mis datos</button>
+        <p class="legal-links"><a href="privacy.html">Política de privacidad</a> · <a href="support.html">Ayuda y contacto</a></p>
       </div>
-      <div class="settings-group family-settings">
-        <strong>Lista familiar compartida</strong>
-        <p id="familyStatus">Inicia sesión para compartirla de forma privada.</p>
-        <div class="settings-actions family-actions">
-          <button class="family-share-button" id="familyShareButton" type="button">Invitar por WhatsApp</button>
-          <button id="familyMembersButton" type="button" hidden>Ver personas</button>
-          <button id="familyDisconnectButton" type="button" hidden>Dejar de compartir</button>
-        </div>
-        <div class="account-list-memberships" id="accountListMemberships"></div>
-        <small class="family-privacy">Cada familiar entra con Google o Apple. Puedes quitar su acceso cuando quieras.</small>
-      </div>
-      <div class="settings-group">
-        <strong>Tus datos</strong>
-        <p>La app conserva una copia en este móvil. Si compartes la lista, también la mantiene al día en tus otros dispositivos y para las personas invitadas.</p>
-        <div class="settings-actions">
-          <button id="exportButton" type="button">Exportar copia</button>
-          <label class="import-button">Importar copia<input id="importInput" type="file" accept="application/json" /></label>
-        </div>
-      </div>
-      <button class="danger-button" id="clearButton" type="button">Borrar lista e historial</button>
-      <button class="danger-button account-delete" id="deleteAccountButton" type="button" hidden>Eliminar mi cuenta y mis datos</button>
-      <p class="legal-links"><a href="privacy.html">Política de privacidad</a> · <a href="support.html">Ayuda y contacto</a></p>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true" inert></div>
 
-    <script type="module" src="app.mjs?v=37"></script>
+    <script type="module" src="app.mjs?v=38"></script>
   </body>
 </html>
 

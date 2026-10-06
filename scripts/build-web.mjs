@@ -12,6 +12,8 @@ const assets = [
   "icon-192.png",
   "icon-512.png",
   "apple-touch-icon.png",
+  "fonts/Lora-Variable.ttf",
+  "fonts/OFL.txt",
   "app.mjs",
   "account-sharing.mjs",
   "account-state-writer.mjs",
@@ -27,7 +29,11 @@ const assets = [
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 
-await Promise.all(assets.map((asset) => cp(resolve(root, asset), resolve(output, asset))));
+await Promise.all(assets.map(async (asset) => {
+  const destination = resolve(output, asset);
+  await mkdir(dirname(destination), { recursive: true });
+  await cp(resolve(root, asset), destination);
+}));
 
 let html = await readFile(resolve(root, "index.html"), "utf8");
 html = html

@@ -43,7 +43,27 @@ try {
         throw new Error(`La cabecera queda recortada en ${state} a ${width}px: ${JSON.stringify(header)}`);
       }
     };
+    const waitForFonts = async () => page.evaluate(() => document.fonts.ready);
+    const assertTouchTargets = async (state) => {
+      if (width > 390) return;
+      const tooSmall = await page.evaluate(() => Array.from(document.querySelectorAll(
+        "button, .item-photo-picker, .import-button, label.setting-row",
+      )).flatMap((element, index) => {
+        if (element.closest("[hidden], [aria-hidden='true'], dialog:not([open])")) return [];
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        if (style.display === "none" || style.visibility === "hidden" || rect.width <= 0 || rect.height <= 0) return [];
+        const size = Math.min(rect.width, rect.height);
+        return size < 43.5 ? [{
+          target: element.getAttribute("aria-label") || element.textContent.trim().replace(/\s+/g, " ").slice(0, 45) || `${element.tagName}-${index}`,
+          width: rect.width,
+          height: rect.height,
+        }] : [];
+      }));
+      if (tooSmall.length) throw new Error(`Objetivos táctiles insuficientes en ${state} a ${width}px: ${JSON.stringify(tooSmall)}`);
+    };
     await page.goto(`http://127.0.0.1:${port}/?captura=lista`, { waitUntil: "networkidle" });
+    await waitForFonts();
     await page.waitForTimeout(450);
     await assertHeaderVisible("lista");
     await page.screenshot({ path: resolve(output, `lista-${width}.png`) });
@@ -55,8 +75,10 @@ try {
     if (layout.mainBottom > layout.navigationTop + 1 || layout.navigationBottom > layout.viewport + 1) {
       throw new Error(`La navegación invade el contenido en ${width}px: ${JSON.stringify(layout)}`);
     }
+    await assertTouchTargets("lista");
     await page.locator("main").evaluate((main) => { main.scrollTop = main.scrollHeight; });
     await page.waitForTimeout(150);
+    await assertHeaderVisible("lista al final");
     const finalListLayout = await page.evaluate(() => {
       const main = document.querySelector("main").getBoundingClientRect();
       const finalCard = document.querySelector("#listContent .category-group:last-child")?.getBoundingClientRect();
@@ -113,12 +135,22 @@ try {
       await page.waitForTimeout(250);
     }
     await page.locator("#itemInput").blur();
+    if (width <= 390) {
+      await page.locator(".item-edit-trigger").first().click();
+      await page.waitForTimeout(250);
+      await assertTouchTargets("editar producto");
+      await page.screenshot({ path: resolve(output, `editar-${width}.png`) });
+      await page.locator("#itemEditCancel").click();
+      await page.waitForTimeout(150);
+    }
     await page.locator('[data-nav="history"]').first().click();
     await page.waitForTimeout(450);
     await assertHeaderVisible("historial");
+    await assertTouchTargets("historial");
     await page.screenshot({ path: resolve(output, `historial-${width}.png`) });
     await page.locator("main").evaluate((main) => { main.scrollTop = main.scrollHeight; });
     await page.waitForTimeout(150);
+    await assertHeaderVisible("historial al final");
     const finalHistoryLayout = await page.evaluate(() => {
       const main = document.querySelector("main").getBoundingClientRect();
       const finalCard = document.querySelector("#historyContent > :last-child")?.getBoundingClientRect();
@@ -146,10 +178,12 @@ try {
     await page.locator('[data-nav="expiration"]').first().click();
     await page.waitForTimeout(350);
     await assertHeaderVisible("caducidad");
+    await assertTouchTargets("caducidad");
     await page.screenshot({ path: resolve(output, `caducidad-${width}.png`) });
     await page.locator('[data-nav="ideas"]').first().click();
     await page.waitForTimeout(350);
     await assertHeaderVisible("comprados");
+    await assertTouchTargets("comprados");
     await page.screenshot({ path: resolve(output, `comprados-${width}.png`) });
     if (width === 320) {
       await page.locator('[data-nav="list"]').first().click();
@@ -179,19 +213,37 @@ try {
     if (overflow) throw new Error(`Desbordamiento horizontal en ${width}px`);
     for (const mode of ["pendiente", "guardado"]) {
       await page.goto(`http://127.0.0.1:${port}/?captura=${mode}`, { waitUntil: "networkidle" });
+      await waitForFonts();
       await page.waitForTimeout(450);
+      if (width === 320) {
+        const headerCollision = await page.evaluate(() => {
+          const title = document.querySelector(".brand strong").getBoundingClientRect();
+          const actions = document.querySelector(".topbar-actions").getBoundingClientRect();
+          return { titleRight: title.right, actionsLeft: actions.left, collides: title.right > actions.left + 1 };
+        });
+        if (headerCollision.collides) throw new Error(`La marca invade los estados de cabecera: ${JSON.stringify(headerCollision)}`);
+      }
       await page.screenshot({ path: resolve(output, `${mode}-${width}.png`) });
       if (width <= 390) {
         await page.locator("#settingsButton").click();
         await page.waitForTimeout(250);
+        await assertTouchTargets(`${mode} ajustes`);
         await page.screenshot({ path: resolve(output, `${mode}-ajustes-${width}.png`) });
-        await page.locator("#settingsDialog").evaluate((dialog) => { dialog.scrollTop = dialog.scrollHeight; });
+        await page.locator(".settings-body").evaluate((body) => { body.scrollTop = body.scrollHeight; });
         await page.waitForTimeout(150);
         const finalActionVisible = await page.locator("#deleteAccountButton").evaluate((button) => {
           const rect = button.getBoundingClientRect();
           return rect.top >= 0 && rect.bottom <= innerHeight;
         });
         if (!finalActionVisible) throw new Error(`La acción final de Ajustes no queda visible al desplazar en ${width}px`);
+        const stickyHeaderSurface = await page.locator(".sheet-heading").evaluate((heading) => ({
+          backgroundColor: getComputedStyle(heading).backgroundColor,
+          backgroundImage: getComputedStyle(heading).backgroundImage,
+        }));
+        if (stickyHeaderSurface.backgroundColor === "rgba(0, 0, 0, 0)" || stickyHeaderSurface.backgroundImage !== "none") {
+          throw new Error(`La cabecera de Ajustes deja ver contenido por detrás: ${JSON.stringify(stickyHeaderSurface)}`);
+        }
+        await assertTouchTargets(`${mode} ajustes al final`);
         await page.screenshot({ path: resolve(output, `${mode}-ajustes-final-${width}.png`) });
         if (mode === "pendiente") {
           await page.locator("#importInput").focus();
