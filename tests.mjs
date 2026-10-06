@@ -765,11 +765,36 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=36/u);
-  assert.match(index, /app\.mjs\?v=36/u);
-  assert.match(app, /service-worker\.js\?v=36/u);
-  assert.match(worker, /que-te-falta-v36/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=34/u);
+  assert.match(index, /styles\.css\?v=37/u);
+  assert.match(index, /app\.mjs\?v=37/u);
+  assert.match(app, /service-worker\.js\?v=37/u);
+  assert.match(worker, /que-te-falta-v37/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=36/u);
+});
+
+test("los estados de revisión no enseñan correos ficticios ni concordancias dudosas", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(app, /example\.invalid/u);
+  assert.match(app, /Se ha quitado «\$\{before\.name\}»/u);
+  assert.doesNotMatch(app, /\$\{before\.name\} quitado/u);
+  assert.doesNotMatch(app, /congelarlo/u);
+  assert.match(app, /congelar este producto hoy/u);
+  assert.match(app, /Cuenta familiar/u);
+  assert.doesNotMatch(app, /Cuenta de prueba/u);
+  assert.doesNotMatch(index, /para los dos/u);
+});
+
+test("la interfaz conserva la identidad de nota de cocina compartida", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  assert.match(index, /NOTA DE COCINA · POR VOZ/u);
+  assert.match(index, /LA NOTA DE CASA/u);
+  assert.match(styles, /--paper-corner:/u);
+  assert.match(styles, /\.category-group \{[^}]*border-left: 4px solid var\(--category-color\)/u);
+  assert.match(styles, /\.bottom-nav button\.active \{[^}]*box-shadow: inset 0 -3px 0 var\(--green\)/u);
+  assert.match(app, /document\.querySelector\("\.app-shell > main"\)\?\.scrollTo/u);
 });
 
 test("el editor de producto incluye una foto opcional y permisos claros en iPhone", async () => {

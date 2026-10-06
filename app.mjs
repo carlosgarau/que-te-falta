@@ -24,7 +24,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=36";
+} from "./core.mjs?v=37";
 import {
   createFamilyId,
   createFamilySync,
@@ -43,11 +43,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=36";
+} from "./family-sync.mjs?v=37";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=36";
+} from "./secure-sharing.mjs?v=37";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -77,9 +77,9 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=36";
-import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=36";
-import { mergeStateEdits } from "./account-state-writer.mjs?v=36";
+} from "./account-sharing.mjs?v=37";
+import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=37";
+import { mergeStateEdits } from "./account-state-writer.mjs?v=37";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -117,7 +117,7 @@ let pendingAccountInviteId = accountInviteFromUrl(window.location.href);
 let familyId = standaloneListId ? "" : rememberFamilyId();
 let familySync = null;
 let accountUser = ["pendiente", "guardado"].includes(appStoreCaptureMode)
-  ? { uid: "captura", displayName: "Ana", email: "ana@example.invalid" }
+  ? { uid: "captura", displayName: "Cuenta familiar", email: "" }
   : null;
 let accountPrimaryList = ["pendiente", "guardado"].includes(appStoreCaptureMode)
   ? { id: "captura", name: "Lista habitual", role: "owner", memberCount: 2 }
@@ -495,7 +495,7 @@ function recordActivity(action, product, listId = activeListId) {
 function offerItemUndo(listId, before, after, action) {
   const token = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
   undoItemChange = { token, listId, before, after, action };
-  showToast(action === "remove" ? `${before.name} quitado` : `${before.name} actualizado`, {
+  showToast(action === "remove" ? `Se ha quitado «${before.name}»` : `Se ha actualizado «${before.name}»`, {
     label: "Deshacer",
     run: () => {
       if (undoItemChange?.token !== token) return;
@@ -839,7 +839,9 @@ function renderAccountIdentity() {
   const deleteButton = $("#deleteAccountButton");
   if (!name || !email || !avatar || !signIn || !signOut || !deleteButton) return;
   name.textContent = accountUser?.displayName || "Sin iniciar sesión";
-  email.textContent = accountUser?.email || "Puedes usar la app sin cuenta.";
+  email.textContent = accountUser
+    ? accountUser.email || "Sesión iniciada con Google o Apple."
+    : "Puedes usar la app sin cuenta.";
   avatar.innerHTML = accountUser?.photoURL
     ? `<img src="${escapeHtml(accountUser.photoURL)}" alt="" referrerpolicy="no-referrer">`
     : escapeHtml((accountUser?.displayName || accountUser?.email || "?").charAt(0).toUpperCase() || "?");
@@ -1149,8 +1151,8 @@ function renderFamilySharing() {
     };
     status.textContent = accountHasUnsavedChanges
       ? accountStatus === "offline"
-        ? "Guardada en este móvil. Pendiente de enviarse a los demás; volveré a intentarlo."
-        : "Guardando cambios para los demás dispositivos…"
+        ? "Guardada en este móvil. Pendiente de enviarse a las personas de la lista; volveré a intentarlo."
+        : "Guardando cambios en tus otros dispositivos…"
       : accountStatus === "synced" && Number(accountPrimaryList?.memberCount) > 1
         ? "Compartida y sincronizada con tu familia."
         : copy[accountStatus] || "Preparando tu lista privada…";
@@ -1666,7 +1668,7 @@ function renderList() {
   if (!document.body.classList.contains("listening")) {
     $("#voiceTitle").textContent = activeListId === "main" ? "¿Qué hace falta?" : `¿Qué añadimos a ${list.name}?`;
     $("#voiceHint").textContent = activeListId === "main"
-      ? "Toca el micrófono y di “leche, pan y dos kilos de patatas”."
+      ? "Toca el micrófono y dicta lo que falta en casa: “leche, pan y dos kilos de patatas”."
       : `Lo que añadas quedará solo en la lista ${list.name}.`;
   }
 
@@ -1807,7 +1809,7 @@ function expirationBlock(expirations, showHeading = true) {
           const urgency = entry.daysLeft <= 1 ? "urgent" : entry.daysLeft <= 3 ? "soon" : "";
           const date = new Date(`${entry.expiresOn}T12:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "long" });
           const freezeHint = entry.daysLeft <= 1 && isFreezable(entry)
-            ? "Si no lo vais a consumir, conviene congelarlo hoy."
+            ? "Si no lo vais a consumir, conviene congelar este producto hoy."
             : `Fecha indicada: ${date}.`;
           return `
             <article class="expiration-card ${urgency}">
@@ -2149,7 +2151,7 @@ function nativeExpirationNotificationEntries() {
         if (Number.isNaN(at.getTime())) return;
         at.setDate(at.getDate() - threshold);
         const freeze = threshold === 1 && isFreezable(entry)
-          ? " Si aún lo tenéis, conviene congelarlo hoy."
+          ? " Si aún queda, conviene congelar este producto hoy."
           : "";
         entries.push({
           id: `${entry.id}-${threshold}`,
@@ -2257,7 +2259,7 @@ function eatenPronoun(entry) {
 async function showExpirationNotification(entry) {
   if (NATIVE.isNative) return;
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  const freeze = entry.threshold === 1 && isFreezable(entry) ? " Si no, conviene congelarlo hoy." : "";
+  const freeze = entry.threshold === 1 && isFreezable(entry) ? " Si no, conviene congelar este producto hoy." : "";
   const body = `${entry.name} ${alertTimingText(entry)}. ¿Ya te ${eatenPronoun(entry)} has comido?${freeze}`;
   try {
     if ("serviceWorker" in navigator) {
@@ -2285,10 +2287,10 @@ function showNextExpirationAlert() {
   const question = `¿Ya te ${eatenPronoun(currentExpirationAlert)} has comido?`;
   $("#expirationAlertTitle").textContent = `${currentExpirationAlert.name} ${timing}. ${question}`;
   $("#expirationAlertText").textContent = freeze
-    ? "Si todavía lo tenéis, os recomiendo congelarlo hoy para no desperdiciarlo."
+    ? "Si todavía queda, os recomiendo congelar este producto hoy para no desperdiciarlo."
     : "Así dejaré de avisaros si ya está consumido.";
   $("#expirationAlertDialog").showModal();
-  speak(`${currentExpirationAlert.name} ${timing}. ${question}${freeze ? " Si no, te recomiendo congelarlo hoy." : ""}`);
+  speak(`${currentExpirationAlert.name} ${timing}. ${question}${freeze ? " Si no, te recomiendo congelar este producto hoy." : ""}`);
   showExpirationNotification(currentExpirationAlert);
 }
 
@@ -2377,7 +2379,7 @@ function finishNativeVoice(text = "", error = null) {
   recognition = null;
   document.body.classList.remove("listening");
   $("#voiceTitle").textContent = "¿Qué hace falta?";
-  $("#voiceHint").textContent = "Toca el micrófono y di “leche, pan y dos kilos de patatas”.";
+  $("#voiceHint").textContent = "Toca el micrófono y dicta lo que falta en casa: “leche, pan y dos kilos de patatas”.";
   if (error) {
     showToast(error.code === "not-allowed"
       ? "Necesito permiso para usar el micrófono"
@@ -2484,7 +2486,7 @@ function startVoice() {
     recognition = null;
     document.body.classList.remove("listening");
     $("#voiceTitle").textContent = "¿Qué hace falta?";
-    $("#voiceHint").textContent = "Toca el micrófono y di “leche, pan y dos kilos de patatas”.";
+    $("#voiceHint").textContent = "Toca el micrófono y dicta lo que falta en casa: “leche, pan y dos kilos de patatas”.";
     if (finalText.trim()) handleVoiceText(finalText.trim());
     setTimeout(() => { $("#liveTranscript").textContent = ""; }, 3500);
   };
@@ -2495,7 +2497,9 @@ function navigate(view) {
   activeView = view;
   $$(".view").forEach((element) => element.classList.toggle("active", element.dataset.view === view));
   $$("[data-nav]").forEach((button) => button.classList.toggle("active", button.dataset.nav === view));
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  document.querySelector(".app-shell > main")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
 }
 
 function dismissSuggestion(key) {
@@ -2692,7 +2696,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=36");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=37");
   serviceWorkerRegistration.update().catch(() => {});
 }
 

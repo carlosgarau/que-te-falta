@@ -8,10 +8,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="¿Qué te falta?" />
     <meta name="description" content="Tu lista familiar, con voz, memoria y sugerencias útiles." />
-    <link rel="manifest" href="manifest.webmanifest?v=36" />
+    <link rel="manifest" href="manifest.webmanifest?v=37" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="stylesheet" href="styles.css?v=36" />
+    <link rel="stylesheet" href="styles.css?v=37" />
     <title>¿Qué te falta?</title>
   </head>
   <body>
@@ -19,7 +19,7 @@
       <header class="topbar">
         <button class="brand" type="button" data-nav="list" aria-label="Ir a la lista">
           <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 48 48"><path d="M14 19h20l-2 19H16l-2-19Z"/><path d="M19 21c0-8 10-8 10 0"/></svg>
+            <svg viewBox="0 0 48 48"><path d="M13 8h16l6 6v26H13Z"/><path d="M29 8v8h8"/><path d="m18 27 4 4 8-10"/></svg>
           </span>
           <span><strong>¿Qué te falta?</strong><small id="headerSummary">Tu lista familiar</small></span>
         </button>
@@ -35,9 +35,9 @@
         <section class="view active" id="listView" data-view="list">
           <div class="voice-card" id="voiceCard">
             <div class="voice-copy">
-              <span class="eyebrow">DÍMELO</span>
+              <span class="eyebrow">NOTA DE COCINA · POR VOZ</span>
               <h1 id="voiceTitle">¿Qué hace falta?</h1>
-              <p id="voiceHint">Toca el micrófono y di “leche, pan y dos kilos de patatas”.</p>
+              <p id="voiceHint">Toca el micrófono y dicta lo que falta en casa: “leche, pan y dos kilos de patatas”.</p>
               <div class="live-transcript" id="liveTranscript" aria-live="polite"></div>
             </div>
             <button class="mic-button" id="micButton" type="button" aria-label="Hablar">
@@ -62,14 +62,14 @@
 
           <form class="quick-add" id="addForm">
             <label class="sr-only" for="itemInput">Añadir productos</label>
-            <input id="itemInput" autocomplete="off" enterkeyhint="done" placeholder="Escribe un producto…" />
+            <input id="itemInput" autocomplete="off" enterkeyhint="done" placeholder="Apunta un producto…" />
             <button type="submit">Añadir</button>
           </form>
 
           <section class="list-section">
             <div class="section-heading">
               <div>
-                <span class="eyebrow">AHORA</span>
+                <span class="eyebrow">LA NOTA DE CASA</span>
                 <h2><span id="listTitle">Lista habitual</span> <span class="count-badge" id="itemCount">0</span></h2>
               </div>
               <button class="shopping-start" id="shoppingStart" type="button">
@@ -85,12 +85,12 @@
           <div class="page-intro">
             <span class="eyebrow">DESPENSA Y NEVERA</span>
             <h1>Productos con caducidad <span class="count-badge" id="expirationCount">0</span></h1>
-            <p>Una lista compartida para que ninguno de los dos olvide los alimentos más delicados.</p>
+            <p>Una lista compartida para que nadie olvide los alimentos más delicados.</p>
           </div>
           <form class="expiration-add-form" id="manualExpirationForm">
             <label>
               <span>Producto</span>
-              <input id="manualExpirationProduct" autocomplete="off" placeholder="Por ejemplo, hamburguesas" required />
+              <input id="manualExpirationProduct" autocomplete="off" placeholder="Ej. fresas" required />
             </label>
             <label>
               <span>Caduca el</span>
@@ -410,7 +410,7 @@
       </div>
       <div class="settings-group">
         <strong>Tus datos</strong>
-        <p>La app conserva una copia en este móvil. Si activas la lista familiar, también la sincroniza para los dos.</p>
+        <p>La app conserva una copia en este móvil. Si compartes la lista, también la mantiene al día en tus otros dispositivos y para las personas invitadas.</p>
         <div class="settings-actions">
           <button id="exportButton" type="button">Exportar copia</button>
           <label class="import-button">Importar copia<input id="importInput" type="file" accept="application/json" /></label>
@@ -423,7 +423,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true" inert></div>
 
-    <script type="module" src="app.mjs?v=36"></script>
+    <script type="module" src="app.mjs?v=37"></script>
   </body>
 </html>
 
