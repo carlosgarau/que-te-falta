@@ -99,9 +99,7 @@ if tap_text "Ajustes"; then
   adb exec-out screencap -p > "$output/ajustes-android.png"
   dump_ui
   if tap_text "Datos y privacidad"; then
-    sleep 1
-    adb shell input swipe 540 1700 540 650 500
-    sleep 1
+    sleep 2
     adb exec-out screencap -p > "$output/ajustes-final-android.png"
   fi
 fi

@@ -1,5 +1,5 @@
-const CACHE = "que-te-falta-v40";
-const ASSETS = ["./", "./index.html", "./styles.css?v=40", "./app.mjs?v=40", "./core.mjs?v=40", "./family-sync.mjs?v=40", "./secure-sharing.mjs?v=40", "./account-sharing.mjs?v=40", "./account-state-writer.mjs?v=40", "./activity.mjs?v=40", "./fonts/Lora-Variable.ttf", "./icon.svg", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png", "./manifest.webmanifest?v=40"];
+const CACHE = "que-te-falta-v41";
+const ASSETS = ["./", "./index.html", "./styles.css?v=41", "./app.mjs?v=41", "./core.mjs?v=41", "./family-sync.mjs?v=41", "./secure-sharing.mjs?v=41", "./account-sharing.mjs?v=41", "./account-state-writer.mjs?v=41", "./activity.mjs?v=41", "./fonts/Lora-Variable.ttf", "./icon.svg", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png", "./manifest.webmanifest?v=41"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));

@@ -765,22 +765,28 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=40/u);
-  assert.match(index, /app\.mjs\?v=40/u);
-  assert.match(app, /service-worker\.js\?v=40/u);
-  assert.match(worker, /que-te-falta-v40/u);
+  assert.match(index, /styles\.css\?v=41/u);
+  assert.match(index, /app\.mjs\?v=41/u);
+  assert.match(app, /service-worker\.js\?v=41/u);
+  assert.match(worker, /que-te-falta-v41/u);
   assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=39/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=40/u);
 });
 
 test("los ajustes esconden las acciones sensibles y mantienen enlaces táctiles", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const capture = await readFile(new URL("./scripts/capture-household.mjs", import.meta.url), "utf8");
-  assert.match(index, /<details class="settings-danger-details">[\s\S]*<summary>Datos y privacidad<\/summary>/u);
+  assert.match(index, /<details class="settings-danger-details" id="settingsDangerDetails">[\s\S]*<summary>Datos y privacidad<\/summary>/u);
   assert.match(styles, /\.legal-links a \{[^}]*min-height: 44px/u);
   assert.match(capture, /button, a\[href\], summary/u);
   assert.match(capture, /partialInitialActions/u);
+  assert.match(index, /<button class="import-button" id="importButton"/u);
+  assert.match(index, /id="importInput"[^>]*hidden/u);
+  assert.match(app, /settingsDangerDetails[\s\S]*requestAnimationFrame[\s\S]*family-settings/u);
+  assert.match(styles, /\.account-cancel \{[^}]*min-height: 48px[^}]*background: #f0f3e7/u);
+  assert.match(styles, /@media \(max-width: 360px\)[\s\S]*\.item-edit-row \{ grid-template-columns: 1fr; \}/u);
 });
 
 test("los estados de revisión no enseñan correos ficticios ni concordancias dudosas", async () => {

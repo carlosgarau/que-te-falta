@@ -312,8 +312,8 @@ try {
         await assertTouchTargets(`${mode} ajustes al final`);
         await page.screenshot({ path: resolve(output, `${mode}-ajustes-final-${width}.png`) });
         if (mode === "pendiente") {
-          await page.locator("#importInput").focus();
-          if (await page.locator(".import-button").evaluate((label) => getComputedStyle(label).outlineStyle) === "none") {
+          await page.locator("#importButton").focus();
+          if (await page.locator("#importButton").evaluate((button) => getComputedStyle(button).outlineStyle) === "none") {
             throw new Error("Importar copia no tiene foco visible");
           }
           await page.screenshot({ path: resolve(output, `importar-foco-${width}.png`) });

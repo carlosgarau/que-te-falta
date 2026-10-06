@@ -24,7 +24,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=40";
+} from "./core.mjs?v=41";
 import {
   createFamilyId,
   createFamilySync,
@@ -43,11 +43,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=40";
+} from "./family-sync.mjs?v=41";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=40";
+} from "./secure-sharing.mjs?v=41";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -77,9 +77,9 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=40";
-import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=40";
-import { mergeStateEdits } from "./account-state-writer.mjs?v=40";
+} from "./account-sharing.mjs?v=41";
+import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=41";
+import { mergeStateEdits } from "./account-state-writer.mjs?v=41";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -2666,8 +2666,24 @@ document.addEventListener("click", (event) => {
   if (accountListOpen) switchAccountFamilyList(accountListOpen.dataset.accountListOpen);
 });
 
-$("#settingsButton").addEventListener("click", () => $("#settingsDialog").showModal());
+$("#settingsButton").addEventListener("click", () => {
+  const dialog = $("#settingsDialog");
+  const body = dialog.querySelector(".settings-body");
+  $("#settingsDangerDetails").open = false;
+  body.scrollTop = 0;
+  dialog.showModal();
+});
 $("#settingsClose").addEventListener("click", () => $("#settingsDialog").close());
+$("#settingsDangerDetails").addEventListener("toggle", (event) => {
+  if (!event.currentTarget.open || !$("#settingsDialog").open) return;
+  requestAnimationFrame(() => {
+    const body = $("#settingsDialog").querySelector(".settings-body");
+    const target = body.querySelector(".family-settings");
+    const maximum = Math.max(0, body.scrollHeight - body.clientHeight);
+    const desired = body.scrollTop + target.getBoundingClientRect().top - body.getBoundingClientRect().top;
+    body.scrollTo({ top: Math.min(maximum, Math.max(0, desired)), behavior: "auto" });
+  });
+});
 $("#speakToggle").addEventListener("change", (event) => {
   state.settings.speak = event.target.checked;
   saveState();
@@ -2681,6 +2697,7 @@ $("#accountSignInButton").addEventListener("click", () => openAccountDialog());
 $("#accountSignOutButton").addEventListener("click", () => handleAccountSignOut().catch((error) => showToast(error?.message || "No he podido cerrar sesión")));
 $("#deleteAccountButton").addEventListener("click", handleDeleteAccount);
 $("#exportButton").addEventListener("click", exportData);
+$("#importButton").addEventListener("click", () => $("#importInput").click());
 $("#importInput").addEventListener("change", (event) => event.target.files[0] && importData(event.target.files[0]));
 $("#clearButton").addEventListener("click", () => {
   if (!confirm("¿Seguro que quieres borrar toda la lista y el historial?")) return;
@@ -2696,7 +2713,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=40");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=41");
   serviceWorkerRegistration.update().catch(() => {});
 }
 

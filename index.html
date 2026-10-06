@@ -8,10 +8,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="¿Qué te falta?" />
     <meta name="description" content="Tu lista familiar, con voz, memoria y sugerencias útiles." />
-    <link rel="manifest" href="manifest.webmanifest?v=40" />
+    <link rel="manifest" href="manifest.webmanifest?v=41" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="stylesheet" href="styles.css?v=40" />
+    <link rel="stylesheet" href="styles.css?v=41" />
     <title>¿Qué te falta?</title>
   </head>
   <body>
@@ -414,10 +414,11 @@
           <p>La app conserva una copia en este móvil. Si compartes la lista, también la mantiene al día en tus otros dispositivos y para las personas invitadas.</p>
           <div class="settings-actions">
             <button id="exportButton" type="button">Exportar copia</button>
-            <label class="import-button">Importar copia<input id="importInput" type="file" accept="application/json" /></label>
+            <button class="import-button" id="importButton" type="button">Importar copia</button>
+            <input id="importInput" type="file" accept="application/json" hidden />
           </div>
         </div>
-        <details class="settings-danger-details">
+        <details class="settings-danger-details" id="settingsDangerDetails">
           <summary>Datos y privacidad</summary>
           <div class="settings-danger-panel">
             <button class="danger-button" id="clearButton" type="button">Borrar lista e historial</button>
@@ -433,7 +434,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true" inert></div>
 
-    <script type="module" src="app.mjs?v=40"></script>
+    <script type="module" src="app.mjs?v=41"></script>
   </body>
 </html>
 
