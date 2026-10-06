@@ -114,6 +114,8 @@ else
 fi
 adb shell input keyevent 4 || true
 sleep 2
+adb shell input swipe 720 700 720 1800 250 || true
+sleep 1
 adb exec-out screencap -p > "$output/editar-producto-android.png"
 
 dump_ui
