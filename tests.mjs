@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import {
   addExpiration,
@@ -765,12 +765,38 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=43/u);
-  assert.match(index, /app\.mjs\?v=43/u);
-  assert.match(app, /service-worker\.js\?v=43/u);
-  assert.match(worker, /que-te-falta-v43/u);
+  assert.match(index, /styles\.css\?v=44/u);
+  assert.match(index, /app\.mjs\?v=44/u);
+  assert.match(app, /service-worker\.js\?v=44/u);
+  assert.match(worker, /que-te-falta-v44/u);
   assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=42/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=43/u);
+});
+
+test("la versión Android usa identidad propia y textos coherentes con el sistema", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const privacy = await readFile(new URL("./privacy.html", import.meta.url), "utf8");
+  const support = await readFile(new URL("./support.html", import.meta.url), "utf8");
+  const adaptive = await readFile(new URL("./android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml", import.meta.url), "utf8");
+  const foreground = await readFile(new URL("./android/app/src/main/res/drawable/ic_launcher_foreground.xml", import.meta.url), "utf8");
+  const splash = await readFile(new URL("./android/app/src/main/res/drawable/splash.xml", import.meta.url), "utf8");
+  const resources = await readdir(new URL("./android/app/src/main/res", import.meta.url), { recursive: true });
+
+  assert.match(index, /class="provider-icon"[\s\S]*#4285f4[\s\S]*Continuar con Google/u);
+  assert.match(index, /provider-button apple[\s\S]*<svg[\s\S]*Continuar con Apple/u);
+  assert.doesNotMatch(`${index}\n${app}`, /Invitar por WhatsApp|Hacer o elegir foto/u);
+  assert.match(privacy, /servicios de voz del sistema operativo/u);
+  assert.match(privacy, /Apple o Google/u);
+  assert.doesNotMatch(privacy, /hoja de compartir de iOS/u);
+  assert.match(support, /Ajustes → Lista familiar compartida/u);
+  assert.match(support, /Ajustes → Datos y privacidad/u);
+  assert.match(adaptive, /@drawable\/ic_launcher_foreground/u);
+  assert.match(foreground, /#F7F4EC/u);
+  assert.match(foreground, /#D9EB9E/u);
+  assert.match(splash, /@drawable\/splash_mark/u);
+  assert.equal(resources.some((path) => /ic_launcher_foreground\.png$/u.test(path)), false);
+  assert.equal(resources.some((path) => /(?:^|[\\/])splash\.png$/u.test(path)), false);
 });
 
 test("los ajustes esconden las acciones sensibles y mantienen enlaces táctiles", async () => {

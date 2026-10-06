@@ -306,11 +306,9 @@ dialog::backdrop { background: rgba(26,35,29,.42); backdrop-filter: blur(5px); }
 .account-icon { color: var(--green); background: #e1eee5; }
 .account-provider-actions { display: grid; gap: 10px; margin: 18px 0 11px; }
 .provider-button { display: flex; min-height: 50px; align-items: center; justify-content: center; gap: 11px; border: 1px solid var(--line); border-radius: 14px; font-size: 13px; font-weight: 800; cursor: pointer; }
-.provider-button span { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; font-size: 13px; }
+.provider-icon { width: 21px; height: 21px; flex: 0 0 21px; }
 .provider-button.google { color: #27352d; background: #fff; }
-.provider-button.google span { color: #fff; background: #4285f4; }
 .provider-button.apple { color: #fff; border-color: #111; background: #111; }
-.provider-button.apple span { color: #111; background: #fff; }
 .provider-button:disabled { opacity: .55; cursor: wait; }
 .account-guidance { display: block; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .account-cancel { width: 100%; min-height: 48px; margin-top: 14px; padding: 0 14px; border: 1px dashed rgba(40,95,67,.34); border-radius: 3px 13px 3px 3px; color: var(--green-dark); background: #f0f3e7; box-shadow: 3px 3px 0 rgba(40,95,67,.07); font-size: 13px; font-weight: 800; cursor: pointer; }

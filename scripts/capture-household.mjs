@@ -67,6 +67,21 @@ try {
     await page.waitForTimeout(450);
     await assertHeaderVisible("lista");
     await page.screenshot({ path: resolve(output, `lista-${width}.png`) });
+    await page.locator("#settingsButton").click();
+    await page.locator("#accountSignInButton").click();
+    await page.waitForTimeout(180);
+    const providerIconsVisible = await page.locator("#accountDialog").evaluate((dialog) => (
+      Array.from(dialog.querySelectorAll(".provider-button .provider-icon")).length === 2
+      && Array.from(dialog.querySelectorAll(".provider-button .provider-icon")).every((icon) => {
+        const rect = icon.getBoundingClientRect();
+        return rect.width >= 20 && rect.height >= 20;
+      })
+    ));
+    if (!providerIconsVisible) throw new Error(`Los proveedores de acceso no muestran su identidad en ${width}px`);
+    await assertTouchTargets("acceso");
+    await page.screenshot({ path: resolve(output, `acceso-${width}.png`) });
+    await page.locator("#accountCancelButton").click();
+    await page.locator("#settingsClose").click();
     const layout = await page.evaluate(() => {
       const main = document.querySelector("main").getBoundingClientRect();
       const navigation = document.querySelector(".bottom-nav").getBoundingClientRect();

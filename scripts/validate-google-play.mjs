@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 
 const expected = Object.freeze({
   androidPackage: "app.quetefalta.mobile",
@@ -12,7 +12,7 @@ const expected = Object.freeze({
 });
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
-const [googleServicesText, iosFirebase, accountSharing, manifest, variables, gradle, rules] = await Promise.all([
+const [googleServicesText, iosFirebase, accountSharing, manifest, variables, gradle, rules, launcher, splash, androidResources] = await Promise.all([
   read("android/app/google-services.json"),
   read("ios/App/App/GoogleService-Info.plist"),
   read("account-sharing.mjs"),
@@ -20,6 +20,9 @@ const [googleServicesText, iosFirebase, accountSharing, manifest, variables, gra
   read("android/variables.gradle"),
   read("android/app/build.gradle"),
   read("database.rules.json"),
+  read("android/app/src/main/res/drawable/ic_launcher_foreground.xml"),
+  read("android/app/src/main/res/drawable/splash.xml"),
+  readdir(new URL("../android/app/src/main/res", import.meta.url), { recursive: true }),
 ]);
 
 const googleServices = JSON.parse(googleServicesText);
@@ -56,6 +59,11 @@ assert.match(manifest, /android:name="android\.permission\.INTERNET"/u);
 assert.match(variables, new RegExp(`targetSdkVersion = ${expected.targetSdk}`));
 assert.match(gradle, new RegExp(`applicationId "${expected.androidPackage.replaceAll(".", "\\.")}"`));
 assert.match(gradle, /bundleRelease/u);
+assert.match(launcher, /#F7F4EC/u);
+assert.match(launcher, /#D9EB9E/u);
+assert.match(splash, /@drawable\/splash_mark/u);
+assert.equal(androidResources.some((path) => /ic_launcher_foreground\.png$/u.test(path)), false);
+assert.equal(androidResources.some((path) => /(?:^|[\\/])splash\.png$/u.test(path)), false);
 
 const parsedRules = JSON.parse(rules);
 const stateWriteRule = parsedRules.rules?.lists?.$listId?.state?.[".write"] || "";

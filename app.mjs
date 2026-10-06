@@ -24,7 +24,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=43";
+} from "./core.mjs?v=44";
 import {
   createFamilyId,
   createFamilySync,
@@ -43,11 +43,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=43";
+} from "./family-sync.mjs?v=44";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=43";
+} from "./secure-sharing.mjs?v=44";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -77,9 +77,9 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=43";
-import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=43";
-import { mergeStateEdits } from "./account-state-writer.mjs?v=43";
+} from "./account-sharing.mjs?v=44";
+import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=44";
+import { mergeStateEdits } from "./account-state-writer.mjs?v=44";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -584,7 +584,7 @@ function updateItemPhotoPreview() {
   preview.hidden = !photo;
   empty.hidden = Boolean(photo);
   remove.hidden = !photo;
-  $("#itemEditPhotoButtonText").textContent = photo ? "Cambiar foto" : "Hacer o elegir foto";
+  $("#itemEditPhotoButtonText").textContent = photo ? "Cambiar foto" : "Elegir foto";
   if (photo) preview.src = photo;
   else preview.removeAttribute("src");
 }
@@ -1158,7 +1158,7 @@ function renderFamilySharing() {
         : copy[accountStatus] || "Preparando tu lista privada…";
     const owner = accountPrimaryList?.role === "owner";
     shareButton.hidden = !owner;
-    shareButton.textContent = "Invitar por WhatsApp";
+    shareButton.textContent = "Compartir invitación";
     membersButton.hidden = !accountPrimaryList;
     disconnectButton.hidden = true;
     badge.hidden = false;
@@ -2722,7 +2722,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=43");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=44");
   serviceWorkerRegistration.update().catch(() => {});
 }
 

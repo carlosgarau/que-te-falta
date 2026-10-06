@@ -8,6 +8,7 @@ La aplicación Android reutiliza la misma interfaz, datos y lógica que las vers
 - Compatibilidad mínima: Android 7.0 (API 24).
 - Objetivo de compilación: Android API 36.
 - Micrófono, lectura de órdenes, notificaciones de caducidad y hoja de compartir conectados a sus complementos nativos.
+- Icono adaptativo y pantalla de arranque propios de «¿Qué te falta?», sin recursos predeterminados de Capacitor.
 - Los enlaces `lacompra://?command=...` y `lacompra://?invitacion=...` abren la aplicación y entregan la orden o invitación.
 - La URL compartida de la web está declarada como Android App Link y la app procesa directamente su parámetro `invitacion`.
 - Cada cambio en la rama `codex/android` genera automáticamente una APK de prueba en GitHub Actions.
@@ -50,13 +51,13 @@ Desde Android Studio se puede ejecutar en un teléfono o emulador. En Windows ta
 ## Antes de solicitar producción
 
 1. Subir el Android App Bundle (`.aab`) 1.0.4 firmado a pruebas internas.
-2. Probar voz, notificaciones, acceso con Google y una invitación familiar entre un Android real y un iPhone.
+2. Probar voz, notificaciones, acceso con Google y una invitación familiar entre un Android real y un iPhone. La comprobación automática ya cubre dos dispositivos que escriben a la vez sin perder productos.
 3. Confirmar en Play Console la ficha, privacidad, seguridad de datos, icono, gráfico destacado y capturas Android.
 4. Completar la prueba cerrada exigida por Google Play y solicitar después el acceso a producción.
 
 ## Novedades sugeridas para 1.0.4
 
-> Comparte una misma lista familiar entre iPhone y Android. Esta versión mejora la sincronización cuando dos personas editan a la vez, permite editar productos y añadirles una foto, y renueva la interfaz como una nota de cocina más clara y cómoda en pantallas pequeñas.
+> Comparte una misma lista familiar entre iPhone y Android. Esta versión mejora la sincronización cuando dos personas editan a la vez, permite editar productos y añadirles una foto, y renueva la interfaz como una nota de cocina más clara y cómoda en pantallas pequeñas. También incorpora el icono y arranque definitivos de la aplicación en Android.
 
 ## Publicación automatizada
 

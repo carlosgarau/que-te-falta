@@ -105,6 +105,30 @@ PY
 fi
 
 dump_ui
+if tap_text "Editar Tomate" || tap_text "Editar Tomates" || tap_text "Tomate"; then
+  sleep 2
+else
+  echo "La jerarquía no expone el editor; usando la posición verificada del nombre del producto"
+  adb shell input tap 390 2140
+  sleep 2
+fi
+adb exec-out screencap -p > "$output/editar-producto-android.png"
+
+dump_ui
+if tap_text "Elegir foto"; then
+  sleep 2
+  adb exec-out screencap -p > "$output/selector-foto-android.png"
+  adb shell input keyevent 4 || true
+  sleep 2
+  dump_ui
+  tap_text "Cancelar" || adb shell input keyevent 4 || true
+  sleep 2
+else
+  echo "No se pudo abrir el selector de foto desde el editor" >&2
+  exit 1
+fi
+
+dump_ui
 if tap_text "Ajustes"; then
   sleep 2
   adb exec-out screencap -p > "$output/ajustes-android.png"
@@ -119,5 +143,7 @@ test -s "$output/acceso-android.png"
 test -s "$output/lista-vacia-android.png"
 test -s "$output/teclado-android.png"
 test -s "$output/lista-con-producto-android.png"
+test -s "$output/editar-producto-android.png"
+test -s "$output/selector-foto-android.png"
 test -s "$output/ajustes-android.png"
 test -s "$output/ajustes-final-android.png"
