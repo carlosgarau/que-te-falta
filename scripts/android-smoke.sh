@@ -10,6 +10,9 @@ test -s "$apk"
 mkdir -p "$output"
 adb install -r "$apk"
 adb shell pm clear "$package" >/dev/null
+adb shell settings put global hide_error_dialogs 1 || true
+adb shell settings put global anr_show_background 0 || true
+adb shell settings put global show_first_crash_dialog_dev_option 0 || true
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb shell am start -W -n "$activity" >/dev/null
@@ -57,6 +60,14 @@ PY
 }
 
 dump_ui
+if grep -Eqi "isn't responding|is not responding|no responde|Close app|Cerrar aplicación" "$output/window.xml"; then
+  echo "Cerrando un diálogo ANR del sistema ajeno a la aplicación y reanudando la prueba"
+  tap_text "Close app" || tap_text "Cerrar aplicación" || adb shell input keyevent 4 || true
+  sleep 2
+  adb shell am start -W -n "$activity" >/dev/null
+  sleep 8
+  dump_ui
+fi
 sleep 2
 adb exec-out screencap -p > "$output/acceso-android.png"
 if ! tap_text "Seguir sin cuenta" && ! tap_text "Ahora no"; then
