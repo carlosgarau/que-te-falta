@@ -84,6 +84,8 @@ PY
 )" && test -n "$coordinates"; then
   adb shell input tap $coordinates
   adb shell input text "Tomates"
+  sleep 1
+  adb exec-out screencap -p > "$output/teclado-android.png"
   adb shell input keyevent 66
   sleep 3
   adb shell input keyevent 4 || true
@@ -91,5 +93,22 @@ PY
   adb exec-out screencap -p > "$output/lista-con-producto-android.png"
 fi
 
+dump_ui
+if tap_text "Ajustes"; then
+  sleep 2
+  adb exec-out screencap -p > "$output/ajustes-android.png"
+  dump_ui
+  if tap_text "Datos y privacidad"; then
+    sleep 1
+    adb shell input swipe 540 1700 540 650 500
+    sleep 1
+    adb exec-out screencap -p > "$output/ajustes-final-android.png"
+  fi
+fi
+
 test -s "$output/acceso-android.png"
 test -s "$output/lista-vacia-android.png"
+test -s "$output/teclado-android.png"
+test -s "$output/lista-con-producto-android.png"
+test -s "$output/ajustes-android.png"
+test -s "$output/ajustes-final-android.png"

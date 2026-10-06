@@ -47,7 +47,7 @@ try {
     const assertTouchTargets = async (state) => {
       if (width > 390) return;
       const tooSmall = await page.evaluate(() => Array.from(document.querySelectorAll(
-        "button, .item-photo-picker, .import-button, label.setting-row",
+        "button, a[href], summary, .item-photo-picker, .import-button, label.setting-row",
       )).flatMap((element, index) => {
         if (element.closest("[hidden], [aria-hidden='true'], dialog:not([open])")) return [];
         const style = getComputedStyle(element);
@@ -253,9 +253,23 @@ try {
           throw new Error(`Ajustes no abre completamente encuadrado en ${width}px: ${JSON.stringify(initialSettingsLayout)}`);
         }
         await assertTouchTargets(`${mode} ajustes`);
+        const partialInitialActions = await page.locator("#settingsDialog").evaluate((dialog) => {
+          const bodyRect = dialog.querySelector(".settings-body").getBoundingClientRect();
+          return Array.from(dialog.querySelectorAll("button, a[href], summary")).flatMap((element) => {
+            if (element.tagName !== "SUMMARY" && element.closest("details:not([open])")) return [];
+            const rect = element.getBoundingClientRect();
+            const intersects = rect.bottom > bodyRect.top && rect.top < bodyRect.bottom;
+            const complete = rect.top >= bodyRect.top - 1 && rect.bottom <= bodyRect.bottom + 1;
+            return intersects && !complete ? [element.textContent.trim()] : [];
+          });
+        });
+        if (partialInitialActions.length) {
+          throw new Error(`Ajustes muestra controles parcialmente recortados en ${width}px: ${partialInitialActions.join(", ")}`);
+        }
         await page.screenshot({ path: resolve(output, `${mode}-ajustes-${width}.png`) });
+        await page.locator(".settings-danger-details").evaluate((details) => { details.open = true; });
         await page.locator(".settings-body").evaluate((body) => {
-          const firstCompleteGroup = body.querySelector(".account-settings");
+          const firstCompleteGroup = body.querySelector(".family-settings");
           const maximum = Math.max(0, body.scrollHeight - body.clientHeight);
           const desired = firstCompleteGroup
             ? body.scrollTop + firstCompleteGroup.getBoundingClientRect().top - body.getBoundingClientRect().top
@@ -273,8 +287,9 @@ try {
         if (!settingsHeaderVisible) throw new Error(`La cabecera de Ajustes queda recortada al desplazar en ${width}px`);
         const settingsBodyStartsCleanly = await page.locator("#settingsDialog").evaluate((dialog) => {
           const bodyRect = dialog.querySelector(".settings-body").getBoundingClientRect();
+          const familyRect = dialog.querySelector(".family-settings").getBoundingClientRect();
           const accountRect = dialog.querySelector(".account-settings").getBoundingClientRect();
-          return accountRect.top >= bodyRect.top - 1;
+          return familyRect.top >= bodyRect.top - 1 && accountRect.bottom <= bodyRect.top + 1;
         });
         if (!settingsBodyStartsCleanly) throw new Error(`Ajustes deja una sección parcialmente recortada al desplazar en ${width}px`);
         const finalActionVisible = await page.locator("#deleteAccountButton").evaluate((button) => {
@@ -282,6 +297,11 @@ try {
           return rect.top >= 0 && rect.bottom <= innerHeight;
         });
         if (!finalActionVisible) throw new Error(`La acción final de Ajustes no queda visible al desplazar en ${width}px`);
+        const finalLegalLinksVisible = await page.locator(".legal-links").evaluate((links) => {
+          const rect = links.getBoundingClientRect();
+          return rect.top >= 0 && rect.bottom <= innerHeight;
+        });
+        if (!finalLegalLinksVisible) throw new Error(`Los enlaces legales de Ajustes no quedan visibles al desplazar en ${width}px`);
         const stickyHeaderSurface = await page.locator(".sheet-heading").evaluate((heading) => ({
           backgroundColor: getComputedStyle(heading).backgroundColor,
           backgroundImage: getComputedStyle(heading).backgroundImage,

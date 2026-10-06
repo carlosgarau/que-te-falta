@@ -8,10 +8,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="¿Qué te falta?" />
     <meta name="description" content="Tu lista familiar, con voz, memoria y sugerencias útiles." />
-    <link rel="manifest" href="manifest.webmanifest?v=39" />
+    <link rel="manifest" href="manifest.webmanifest?v=40" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="stylesheet" href="styles.css?v=39" />
+    <link rel="stylesheet" href="styles.css?v=40" />
     <title>¿Qué te falta?</title>
   </head>
   <body>
@@ -417,15 +417,23 @@
             <label class="import-button">Importar copia<input id="importInput" type="file" accept="application/json" /></label>
           </div>
         </div>
-        <button class="danger-button" id="clearButton" type="button">Borrar lista e historial</button>
-        <button class="danger-button account-delete" id="deleteAccountButton" type="button" hidden>Eliminar mi cuenta y mis datos</button>
-        <p class="legal-links"><a href="privacy.html">Política de privacidad</a> · <a href="support.html">Ayuda y contacto</a></p>
+        <details class="settings-danger-details">
+          <summary>Datos y privacidad</summary>
+          <div class="settings-danger-panel">
+            <button class="danger-button" id="clearButton" type="button">Borrar lista e historial</button>
+            <button class="danger-button account-delete" id="deleteAccountButton" type="button" hidden>Eliminar mi cuenta y mis datos</button>
+            <nav class="legal-links" aria-label="Información legal y ayuda">
+              <a href="privacy.html">Política de privacidad</a>
+              <a href="support.html">Ayuda y contacto</a>
+            </nav>
+          </div>
+        </details>
       </div>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true" inert></div>
 
-    <script type="module" src="app.mjs?v=39"></script>
+    <script type="module" src="app.mjs?v=40"></script>
   </body>
 </html>
 
