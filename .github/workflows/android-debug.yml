@@ -60,6 +60,9 @@ jobs:
           test -n "$GOOGLE_SERVICES_JSON"
           printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
 
+      - name: Validar Android, Firebase y sincronización con iPhone
+        run: pnpm check:google-play
+
       - name: Sincronizar Android
         run: pnpm android:sync
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { makeActivity, mergeActivity, describeActivity } from "./activity.mjs";
 import { createInitialState, displayProductName, hydrateState, parseEntry } from "./core.mjs";
 import { accountStateFrom, mergeAccountState } from "./account-sharing.mjs";
-import { mergeStateEdits } from "./account-state-writer.mjs";
+import { AccountStateWriter, mergeStateEdits } from "./account-state-writer.mjs";
 
 test("la actividad se conserva entre dispositivos y no duplica eventos", () => {
   const first = makeActivity({ id: "a", action: "added", product: "Patatas", actor: "Ana", now: 1000 });
@@ -70,4 +70,33 @@ test("una segunda pulsación conserva cambios ajenos mientras termina la primera
     { id: "a", name: "Patatas", quantity: 3 },
     { id: "b", name: "Leche", quantity: 1 },
   ]);
+});
+
+test("dos móviles guardan a la vez sin perder productos del otro", async () => {
+  let version = 1;
+  let remote = accountStateFrom({ items: [] });
+  const read = async () => ({ state: structuredClone(remote), etag: `\"${version}\"` });
+  const write = async (_id, next, etag) => {
+    if (etag !== `\"${version}\"`) return false;
+    remote = structuredClone(next);
+    version += 1;
+    return true;
+  };
+  const iphone = new AccountStateWriter({ read, write });
+  const android = new AccountStateWriter({ read, write });
+  iphone.observe("familia", remote);
+  android.observe("familia", remote);
+
+  await Promise.all([
+    iphone.update("familia", accountStateFrom({
+      items: [{ id: "iphone", key: "leche", name: "Leche", quantity: 1, checked: false }],
+    })),
+    android.update("familia", accountStateFrom({
+      items: [{ id: "android", key: "patata", name: "Patata", quantity: 1, checked: false }],
+    })),
+  ]);
+
+  assert.deepEqual(remote.items.map((item) => item.key).sort(), ["leche", "patata"]);
+  assert.equal(iphone.observe("familia", remote), true);
+  assert.equal(android.observe("familia", remote), true);
 });

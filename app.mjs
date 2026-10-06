@@ -2395,6 +2395,20 @@ function handleNativeLaunchUrl(value) {
   } catch {
     return;
   }
+  const inviteId = accountInviteFromUrl(url.toString());
+  if (inviteId) {
+    pendingAccountInviteId = inviteId;
+    navigate("list");
+    if (accountUser) {
+      preparePendingInvite().catch((error) => {
+        showToast(error?.message || "La invitación no es válida");
+        pendingAccountInviteId = "";
+      });
+    } else {
+      openAccountDialog("invite");
+    }
+    return;
+  }
   const command = url.searchParams.get("command");
   const directAdd = url.searchParams.get("add");
   if (!command && !directAdd) return;
