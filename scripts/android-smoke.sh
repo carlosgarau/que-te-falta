@@ -112,11 +112,18 @@ else
   adb shell input tap 390 2140
   sleep 2
 fi
+adb shell input keyevent 4 || true
+sleep 2
 adb exec-out screencap -p > "$output/editar-producto-android.png"
 
 dump_ui
 if tap_text "Elegir foto"; then
   sleep 2
+  current_focus="$(adb shell dumpsys window windows | grep -m1 'mCurrentFocus' || true)"
+  if [[ "$current_focus" == *"$package"* ]]; then
+    echo "El selector de fotos no ha salido de la aplicación: $current_focus" >&2
+    exit 1
+  fi
   adb exec-out screencap -p > "$output/selector-foto-android.png"
   adb shell input keyevent 4 || true
   sleep 2
