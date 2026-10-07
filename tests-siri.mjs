@@ -51,6 +51,13 @@ test("Confirmed products retain photos and receipts prevent double writes", () =
   assert.equal(replay.state.items[0].quantity, 2);
 });
 
+test("Siri no permite que un duplicado confirmado supere 99 unidades", () => {
+  const existing = add(initial, "98 patatas", [], "first").state;
+  const pending = add(existing, "dos patatas", [], "second");
+  const approved = pending.duplicates.map((entry) => entry.fingerprint);
+  assert.throws(() => add(existing, "dos patatas", approved, "second"), /no puede superar 99/u);
+});
+
 test("Different units are confirmed as a separate entry and checked products can be bought again", () => {
   const state = add().state;
   const pending = add(state, "dos kilos de patatas", [], "second");

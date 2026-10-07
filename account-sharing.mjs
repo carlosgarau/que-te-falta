@@ -1,4 +1,4 @@
-import { AccountStateWriter } from "./account-state-writer.mjs?v=38";
+import { AccountStateWriter } from "./account-state-writer.mjs?v=49";
 
 const FIREBASE_WEB_VERSION = "11.10.0";
 const FIREBASE_CONFIG = Object.freeze({
@@ -259,6 +259,13 @@ export async function listAccountMemberships() {
   return Object.entries(records || {}).map(([id, record]) => ({ id, ...record }));
 }
 
+export async function removeOwnAccountListReference(listId) {
+  if (!accountUser) throw new Error("Inicia sesión para actualizar tus listas");
+  await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${encodePathPart(listId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function selectPrimaryFamilyAccountList(familyLists, {
   preferredId = "",
   profileId = "",
@@ -289,8 +296,18 @@ export async function listFamilyAccountLists(memberships = null) {
   const records = Array.isArray(memberships) ? memberships : await listAccountMemberships();
   const familyMemberships = records.filter((entry) => entry.type === "family" && entry.id);
   const lists = await Promise.all(familyMemberships.map(async (membership) => {
-    const list = await getAccountList(membership.id);
-    if (!list) return null;
+    let list;
+    try {
+      list = await getAccountList(membership.id);
+    } catch (error) {
+      if (![401, 403].includes(error?.status)) throw error;
+      await removeOwnAccountListReference(membership.id).catch(() => {});
+      return null;
+    }
+    if (!list) {
+      await removeOwnAccountListReference(membership.id).catch(() => {});
+      return null;
+    }
     return {
       ...membership,
       name: list.meta?.name || membership.name || "Mi lista familiar",
@@ -322,10 +339,15 @@ export async function createAccountList({ name, type = "family", state = {} }) {
     state,
   };
   await databaseRequest(`lists/${id}`, { method: "PUT", body: list });
-  await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${id}`, {
-    method: "PUT",
-    body: listIndexRecord({ id, name: list.meta.name, type, role: "owner" }),
-  });
+  try {
+    await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${id}`, {
+      method: "PUT",
+      body: listIndexRecord({ id, name: list.meta.name, type, role: "owner" }),
+    });
+  } catch (error) {
+    await databaseRequest(`lists/${id}`, { method: "DELETE" }).catch(() => {});
+    throw error;
+  }
   return { id, ...list };
 }
 
@@ -361,6 +383,10 @@ export async function getAccountList(listId) {
 
 export function observeAccountState(listId, state) {
   return accountWriter.observe(listId, state);
+}
+
+export function forgetAccountState(listId) {
+  accountWriter.forget(listId);
 }
 
 async function updateOwnedListMetadata(listId, state = {}) {
@@ -430,6 +456,7 @@ export async function mergeIntoAccountListState(listId, incomingState, mergeStat
 export function subscribeAccountList(listId, {
   onState = () => {},
   onStatus = () => {},
+  onDeleted = () => {},
   EventSourceImpl = globalThis.EventSource,
   setTimeoutImpl = globalThis.setTimeout,
   clearTimeoutImpl = globalThis.clearTimeout,
@@ -443,16 +470,41 @@ export function subscribeAccountList(listId, {
   let streamHealthCheck = null;
   let refreshInFlight = null;
 
+  const stop = () => {
+    stopped = true;
+    clearTimeoutImpl?.(refreshTimer);
+    clearTimeoutImpl?.(reconnectTimer);
+    clearTimeoutImpl?.(pollTimer);
+    source?.close();
+    source = null;
+  };
+
+  const handleDeleted = () => {
+    if (stopped) return;
+    accountWriter.forget(listId);
+    try {
+      onDeleted();
+    } finally {
+      onStatus("removed");
+      stop();
+    }
+  };
+
   const refresh = () => {
     if (refreshInFlight) return refreshInFlight;
     refreshInFlight = (async () => {
       try {
         const list = await getAccountList(listId);
+        if (!list) {
+          handleDeleted();
+          return null;
+        }
         if (list?.state && accountWriter.observe(listId, list.state)) onState(list.state, list);
         onStatus("synced");
         return list;
       } catch (error) {
-        onStatus("offline");
+        if ([401, 403].includes(error?.status)) handleDeleted();
+        else onStatus("offline");
         throw error;
       } finally {
         refreshInFlight = null;
@@ -495,6 +547,10 @@ export function subscribeAccountList(listId, {
     source.addEventListener("put", (event) => {
       try {
         const message = JSON.parse(event.data);
+        if (message.path === "/" && message.data === null) {
+          handleDeleted();
+          return;
+        }
         const list = message.path === "/" ? message.data : null;
         if (list?.state && accountWriter.observe(listId, list.state)) onState(list.state, list);
         else refresh().catch(() => {});
@@ -504,7 +560,11 @@ export function subscribeAccountList(listId, {
     });
     source.addEventListener("patch", () => refresh().catch(() => {}));
     source.addEventListener("open", () => onStatus("synced"));
-    source.addEventListener("cancel", () => scheduleReconnect(false));
+    source.addEventListener("cancel", () => {
+      refresh().catch(() => {
+        if (!stopped) scheduleReconnect(false);
+      });
+    });
     source.addEventListener("auth_revoked", () => scheduleReconnect(true));
     source.onerror = () => {
       if (streamHealthCheck) return;
@@ -531,14 +591,7 @@ export function subscribeAccountList(listId, {
   return {
     ready,
     refresh,
-    stop() {
-      stopped = true;
-      clearTimeoutImpl?.(refreshTimer);
-      clearTimeoutImpl?.(reconnectTimer);
-      clearTimeoutImpl?.(pollTimer);
-      source?.close();
-      source = null;
-    },
+    stop,
   };
 }
 
@@ -576,15 +629,22 @@ export async function acceptListInvite(inviteId) {
     method: "PUT",
     body: member,
   });
-  await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${encodePathPart(invite.listId)}`, {
-    method: "PUT",
-    body: listIndexRecord({
-      id: invite.listId,
-      name: invite.listName,
-      type: invite.listType,
-      role: "editor",
-    }),
-  });
+  try {
+    await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${encodePathPart(invite.listId)}`, {
+      method: "PUT",
+      body: listIndexRecord({
+        id: invite.listId,
+        name: invite.listName,
+        type: invite.listType,
+        role: "editor",
+      }),
+    });
+  } catch (error) {
+    await databaseRequest(`lists/${encodePathPart(invite.listId)}/members/${encodePathPart(accountUser.uid)}`, {
+      method: "DELETE",
+    }).catch(() => {});
+    throw error;
+  }
   return invite;
 }
 
@@ -597,26 +657,38 @@ export async function removeListMember(listId, uid) {
   const list = await getAccountList(listId);
   if (list?.members?.[accountUser?.uid]?.role !== "owner") throw new Error("Solo el propietario puede quitar personas");
   if (uid === accountUser.uid) throw new Error("El propietario no puede eliminarse");
-  await databaseRequest(`lists/${encodePathPart(listId)}/members/${encodePathPart(uid)}`, { method: "DELETE" });
-  await databaseRequest(`userLists/${encodePathPart(uid)}/${encodePathPart(listId)}`, { method: "DELETE" });
+  await databaseRequest("", {
+    method: "PATCH",
+    body: {
+      [`lists/${encodePathPart(listId)}/members/${encodePathPart(uid)}`]: null,
+      [`userLists/${encodePathPart(uid)}/${encodePathPart(listId)}`]: null,
+    },
+  });
 }
 
 export async function deleteAccountList(listId) {
   const list = await getAccountList(listId);
   if (list?.members?.[accountUser?.uid]?.role !== "owner") throw new Error("Solo el propietario puede eliminar esta lista");
-  await Promise.all(Object.keys(list.members || {}).map((uid) => databaseRequest(
-    `userLists/${encodePathPart(uid)}/${encodePathPart(listId)}`,
-    { method: "DELETE" },
-  ).catch(() => {})));
-  await databaseRequest(`lists/${encodePathPart(listId)}`, { method: "DELETE" });
+  const removals = { [`lists/${encodePathPart(listId)}`]: null };
+  Object.keys(list.members || {}).forEach((uid) => {
+    removals[`userLists/${encodePathPart(uid)}/${encodePathPart(listId)}`] = null;
+  });
+  await databaseRequest("", { method: "PATCH", body: removals });
+  accountWriter.forget(listId);
 }
 
 export async function leaveAccountList(listId) {
-  if (!accountUser) return;
+  if (!accountUser) throw new Error("Inicia sesión para salir de esta lista");
   const list = await getAccountList(listId);
   if (list?.members?.[accountUser.uid]?.role === "owner") throw new Error("El propietario debe eliminar la lista o transferirla");
-  await databaseRequest(`lists/${encodePathPart(listId)}/members/${encodePathPart(accountUser.uid)}`, { method: "DELETE" });
-  await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${encodePathPart(listId)}`, { method: "DELETE" });
+  await databaseRequest("", {
+    method: "PATCH",
+    body: {
+      [`lists/${encodePathPart(listId)}/members/${encodePathPart(accountUser.uid)}`]: null,
+      [`userLists/${encodePathPart(accountUser.uid)}/${encodePathPart(listId)}`]: null,
+    },
+  });
+  accountWriter.forget(listId);
 }
 
 export async function deleteAccountAndData() {
@@ -640,12 +712,7 @@ export async function deleteAccountAndData() {
       continue;
     }
     if (list.meta?.ownerId === uid) {
-      const memberIds = Object.keys(list.members || {});
-      await Promise.all(memberIds.map((memberId) => databaseRequest(
-        `userLists/${encodePathPart(memberId)}/${encodePathPart(membership.id)}`,
-        { method: "DELETE" },
-      )));
-      await databaseRequest(`lists/${encodePathPart(membership.id)}`, { method: "DELETE" });
+      await deleteAccountList(membership.id);
     } else {
       await leaveAccountList(membership.id);
     }

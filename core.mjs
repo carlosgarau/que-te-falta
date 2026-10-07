@@ -36,6 +36,13 @@ export function sanitizeProductPhoto(value) {
   return /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/u.test(candidate) ? candidate : "";
 }
 
+function boundedQuantity(value) {
+  const quantity = Number(value);
+  return Number.isFinite(quantity)
+    ? Math.min(99, Math.max(1, Math.round(quantity)))
+    : 1;
+}
+
 export const PERISHABLE_CATEGORIES = new Set([
   "Fruta y verdura",
   "Carne y pescado",
@@ -379,7 +386,8 @@ export function hydrateState(raw) {
     if (!item || typeof item !== "object") return null;
     const { photoDataUrl: rawPhoto, ...rest } = item;
     const photoDataUrl = sanitizeProductPhoto(rawPhoto);
-    return photoDataUrl ? { ...rest, photoDataUrl } : rest;
+    const hydrated = { ...rest, quantity: boundedQuantity(rest.quantity) };
+    return photoDataUrl ? { ...hydrated, photoDataUrl } : hydrated;
   };
   const hydrateItems = (items) => (Array.isArray(items) ? items.map(hydrateItem).filter(Boolean) : []);
   return {
@@ -409,22 +417,30 @@ export function hydrateState(raw) {
 }
 
 export function makeItem(entry, now = Date.now()) {
+  const quantity = boundedQuantity(entry?.quantity);
   return {
     id: globalThis.crypto?.randomUUID?.() || `${now}-${Math.random().toString(16).slice(2)}`,
     ...entry,
+    quantity,
     addedAt: new Date(now).toISOString(),
     checked: false,
   };
+}
+
+export function clearMainListAndHistory(state) {
+  state.items = [];
+  state.catalog = {};
+  state.purchases = [];
+  state.activity = [];
+  state.dismissedSuggestions = {};
+  return state;
 }
 
 export function updateShoppingItem(item, changes = {}, now = Date.now()) {
   if (!item || typeof item !== "object") return null;
   const parsed = parseEntry(changes.name ?? item.name);
   if (!parsed.key) throw new Error("Escribe el nombre del producto");
-  const requestedQuantity = Number(changes.quantity ?? item.quantity);
-  const quantity = Number.isFinite(requestedQuantity)
-    ? Math.min(99, Math.max(1, Math.round(requestedQuantity)))
-    : 1;
+  const quantity = boundedQuantity(changes.quantity ?? item.quantity);
   const requestedCategory = changes.category ?? item.category;
   const category = Object.prototype.hasOwnProperty.call(CATEGORY_META, requestedCategory)
     ? requestedCategory
@@ -443,6 +459,14 @@ export function updateShoppingItem(item, changes = {}, now = Date.now()) {
   if (photoDataUrl) item.photoDataUrl = photoDataUrl;
   else delete item.photoDataUrl;
   return item;
+}
+
+export function increaseShoppingQuantity(item, amount = 1) {
+  if (!item || typeof item !== "object") return null;
+  const current = Number(item.quantity) || 1;
+  const increase = Number(amount) || 1;
+  item.quantity = boundedQuantity(current + increase);
+  return item.quantity;
 }
 
 export function registerRequest(state, entry, now = Date.now()) {
@@ -620,7 +644,7 @@ export function getSuggestions(state, now = Date.now()) {
             key: entry.key,
             name: entry.name,
             category: entry.category,
-            reason: `Hace ${elapsed} días que no lo compras`,
+            reason: `Última compra: hace ${elapsed} días`,
             score: elapsed / dueAfter,
             kind: "remembered",
           };
@@ -632,7 +656,7 @@ export function getSuggestions(state, now = Date.now()) {
             key: entry.key,
             name: entry.name,
             category: entry.category,
-            reason: `Lo pediste hace ${elapsed} días`,
+            reason: `Última petición: hace ${elapsed} días`,
             score: elapsed / 21,
             kind: "remembered",
           };
@@ -661,6 +685,18 @@ export function getSuggestions(state, now = Date.now()) {
 export function shoppingSummary(items) {
   const pending = items.filter((item) => !item.checked);
   const families = groupItems(pending).length;
-  if (!pending.length) return "La lista está vacía";
+  if (!items.length) return "La lista está vacía";
+  if (!pending.length) return "No quedan productos pendientes";
   return `${pending.length} ${pending.length === 1 ? "producto" : "productos"} en ${families} ${families === 1 ? "familia" : "familias"}`;
+}
+
+export function shoppingFinishMessage(checkedCount, pendingCount) {
+  const checked = Math.max(0, Number(checkedCount) || 0);
+  const pending = Math.max(0, Number(pendingCount) || 0);
+  const checkedLabel = `${checked} ${checked === 1 ? "producto" : "productos"}`;
+  if (pending) {
+    const pendingLabel = `${pending} ${pending === 1 ? "producto pendiente" : "productos pendientes"}`;
+    return `Guardaré ${checkedLabel} en el historial y dejaré ${pendingLabel} en la lista.`;
+  }
+  return `Guardaré ${checkedLabel} en el historial y dejaré la lista preparada para la próxima vez.`;
 }

@@ -1,6 +1,7 @@
 import {
   addExpiration,
   CATEGORY_META,
+  clearMainListAndHistory,
   createInitialState,
   detectVoiceCommand,
   displayProductName,
@@ -11,6 +12,7 @@ import {
   getSuggestions,
   groupItems,
   hydrateState,
+  increaseShoppingQuantity,
   isFreezable,
   isPerishable,
   makeItem,
@@ -20,11 +22,12 @@ import {
   parseSpokenList,
   registerPurchase,
   registerRequest,
+  shoppingFinishMessage,
   shoppingSummary,
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=46";
+} from "./core.mjs?v=49";
 import {
   createFamilyId,
   createFamilySync,
@@ -43,11 +46,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=46";
+} from "./family-sync.mjs?v=49";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=46";
+} from "./secure-sharing.mjs?v=49";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -59,6 +62,7 @@ import {
   deleteAccountList,
   deleteAccountAndData,
   ensureFamilyAccountList,
+  forgetAccountState,
   getAccountList,
   getAccountProfile,
   getListInvite,
@@ -71,15 +75,16 @@ import {
   mergeAccountState,
   observeAccountState,
   removeListMember,
+  removeOwnAccountListReference,
   saveAccountProfile,
   savePrimaryFamilyListId,
   signInWithAccount,
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=46";
-import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=46";
-import { mergeStateEdits } from "./account-state-writer.mjs?v=46";
+} from "./account-sharing.mjs?v=49";
+import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=49";
+import { mergeStateEdits } from "./account-state-writer.mjs?v=49";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -328,11 +333,8 @@ function flushAccountPrimarySync() {
   accountWriteInFlight = true;
   const local = accountStateFrom(state);
   const base = readAccountBase();
-  getAccountList(listId)
-    .then((latest) => updateAccountListState(
-      listId,
-      base ? mergeStateEdits(base, local, accountStateFrom(latest?.state || {})) : local,
-    ))
+  if (base) observeAccountState(listId, accountStateFrom(base));
+  updateAccountListState(listId, local)
     .then((saved) => {
       if (accountPrimaryList?.id !== listId) return;
       rememberAccountBase(saved);
@@ -879,24 +881,61 @@ function applyRemoteAccountState(remoteState, { initial = false } = {}) {
   if (!initial) showToast("Lista actualizada desde otro móvil");
 }
 
+function accountSpecialSnapshot(local, membership, remoteState = {}, remote = {}) {
+  const role = remote?.members?.[accountUser?.uid]?.role
+    || membership?.role
+    || local?.accountRole
+    || "editor";
+  return hydrateState({
+    specialLists: [{
+      id: local?.id || globalThis.crypto?.randomUUID?.() || `account-${membership.id}`,
+      name: remote?.meta?.name || remoteState?.name || membership?.name || local?.name || "Lista compartida",
+      shareId: local?.shareId || "",
+      accountListId: membership.id,
+      accountRole: role,
+      createdAt: local?.createdAt || new Date().toISOString(),
+      items: Array.isArray(remoteState?.items) ? remoteState.items : [],
+    }],
+  }).specialLists[0];
+}
+
+function removeLocalAccountSpecialList(accountListId, { notify = false } = {}) {
+  const removed = state.specialLists.filter((entry) => entry.accountListId === accountListId);
+  accountSpecialSyncs.get(accountListId)?.sync.stop();
+  accountSpecialSyncs.delete(accountListId);
+  forgetAccountState(accountListId);
+  if (!removed.length) return;
+  const removedIds = new Set(removed.map((entry) => entry.id));
+  state.specialLists = state.specialLists.filter((entry) => !removedIds.has(entry.id));
+  if (removedIds.has(activeListId)) activeListId = "main";
+  saveState({ sync: false });
+  render();
+  if (notify) showToast("Esta lista ya no está compartida contigo");
+}
+
+function pruneLocalAccountSpecialLists(memberships) {
+  const available = new Set((memberships || [])
+    .filter((entry) => entry.type === "special")
+    .map((entry) => entry.id));
+  const stale = state.specialLists
+    .filter((entry) => entry.accountListId && !available.has(entry.accountListId))
+    .map((entry) => entry.accountListId);
+  [...new Set(stale)].forEach((listId) => removeLocalAccountSpecialList(listId));
+}
+
 async function initializeAccountSpecialMembership(membership) {
   if (!membership?.id || accountSpecialSyncs.has(membership.id)) return;
   const remoteList = await getAccountList(membership.id);
   if (!remoteList?.state) return;
-  observeAccountState(membership.id, remoteList.state);
   let local = state.specialLists.find((entry) => entry.accountListId === membership.id);
-  if (!local) {
-    local = {
-      id: globalThis.crypto?.randomUUID?.() || `account-${membership.id}`,
-      name: remoteList.meta?.name || membership.name || "Lista compartida",
-      accountListId: membership.id,
-      accountRole: membership.role || "editor",
-      createdAt: new Date().toISOString(),
-      items: Array.isArray(remoteList.state.items) ? remoteList.state.items : [],
-    };
+  const snapshot = accountSpecialSnapshot(local, membership, remoteList.state, remoteList);
+  if (local) Object.assign(local, snapshot);
+  else {
+    local = snapshot;
     state.specialLists.push(local);
-    saveState({ sync: false });
   }
+  saveState({ sync: false });
+  observeAccountState(membership.id, remoteList.state);
   const localId = local.id;
   const sync = subscribeAccountList(membership.id, {
     onStatus: (status) => {
@@ -906,13 +945,11 @@ async function initializeAccountSpecialMembership(membership) {
     onState: (remoteState, remote) => {
       const current = specialListById(localId);
       if (!current) return;
-      current.name = remote?.meta?.name || remoteState.name || current.name;
-      current.items = Array.isArray(remoteState.items) ? remoteState.items : [];
-      current.accountListId = membership.id;
-      current.accountRole = membership.role || "editor";
+      Object.assign(current, accountSpecialSnapshot(current, membership, remoteState, remote));
       saveState({ sync: false });
       render();
     },
+    onDeleted: () => removeLocalAccountSpecialList(membership.id, { notify: true }),
   });
   accountSpecialSyncs.set(membership.id, { sync, localId, status: "connecting" });
 }
@@ -932,6 +969,7 @@ async function initializeAccountDataInternal(preferredListId = "") {
   const { selected, familyLists } = resolution;
   const familyById = new Map(familyLists.map((entry) => [entry.id, entry]));
   accountMemberships = resolution.memberships.map((entry) => familyById.get(entry.id) || entry);
+  pruneLocalAccountSpecialLists(accountMemberships);
   const remoteList = selected.list || await getAccountList(selected.id);
   observeAccountState(selected.id, remoteList?.state || {});
   accountPrimaryList = {
@@ -981,13 +1019,41 @@ async function initializeAccountDataInternal(preferredListId = "") {
   accountPrimarySync = subscribeAccountList(accountPrimaryList.id, {
     onState: (remote) => applyRemoteAccountState(remote, { initial: initialAccountRefresh }),
     onStatus: setAccountStatus,
+    onDeleted: () => {
+      const removedId = accountPrimaryList?.id;
+      if (!removedId) return;
+      accountPrimarySync = null;
+      accountPrimaryList = null;
+      accountMemberships = accountMemberships.filter((entry) => entry.id !== removedId);
+      accountHasUnsavedChanges = false;
+      forgetAccountState(removedId);
+      try {
+        localStorage.removeItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`);
+        localStorage.removeItem(ACCOUNT_UNSAVED_KEY);
+        localStorage.removeItem(accountBaseKey(removedId));
+      } catch {}
+      state = hydrateState(mergeAccountState(createInitialState(), state));
+      saveState({ sync: false, accountSync: false });
+      render();
+      showToast("Ya no tienes acceso a esa lista familiar");
+      setTimeout(() => initializeAccountData(), 0);
+    },
   });
   await accountPrimarySync.ready;
   initialAccountRefresh = false;
   if (hasPendingLocalChanges) flushAccountPrimarySync();
   await Promise.all(accountMemberships
     .filter((entry) => entry.type === "special")
-    .map((entry) => initializeAccountSpecialMembership(entry).catch(() => {})));
+    .map(async (entry) => {
+      try {
+        await initializeAccountSpecialMembership(entry);
+      } catch (error) {
+        if ([401, 403].includes(error?.status)) {
+          await removeOwnAccountListReference(entry.id).catch(() => {});
+          removeLocalAccountSpecialList(entry.id);
+        }
+      }
+    }));
   stopLegacyFamilySyncAfterAccountMigration();
   renderFamilySharing();
 }
@@ -1526,31 +1592,39 @@ function saveSpecialList(event) {
 
 async function deleteSpecialList() {
   const list = specialListById(activeListId);
-  if (!list || !confirm(`¿Eliminar la lista “${list.name}”? Tu lista habitual no cambiará.`)) return;
+  if (!list) return;
   const shareId = normalizeFamilyId(list.shareId);
   const accountListId = list.accountListId;
-  sharedSyncEntry(list.id)?.sync.stop();
-  sharedListSyncs.delete(list.id);
-  accountSpecialSyncs.get(accountListId)?.sync.stop();
-  accountSpecialSyncs.delete(accountListId);
-  if (accountListId) {
-    try {
+  const leavesSharedList = Boolean(list.accountListId && list.accountRole !== "owner");
+  const sharedWithOthers = Boolean(accountListId || shareId);
+  const question = leavesSharedList
+    ? `¿Salir de la lista “${list.name}”? Dejarás de verla, pero seguirá disponible para las demás personas.`
+    : sharedWithOthers
+      ? `¿Eliminar la lista “${list.name}” para todas las personas? Tu lista habitual no cambiará.`
+      : `¿Eliminar la lista “${list.name}”? Tu lista habitual no cambiará.`;
+  if (!confirm(question)) return;
+  try {
+    if (accountListId) {
       if (list.accountRole === "owner") await deleteAccountList(accountListId);
       else await leaveAccountList(accountListId);
-    } catch (error) {
-      showToast(error?.message || "No he podido eliminar la lista compartida");
-      return;
+    } else if (shareId && !leavesSharedList) {
+      const response = await fetch(`${DATABASE_URL}/sharedLists/${shareId}.json`, { method: "DELETE" });
+      if (!response.ok && response.status !== 404) throw new Error("No he podido eliminar la lista compartida");
     }
+  } catch (error) {
+    showToast(error?.message || (leavesSharedList ? "No he podido salir de la lista compartida" : "No he podido eliminar la lista compartida"));
+    return;
   }
+  sharedSyncEntry(list.id)?.sync.stop();
+  sharedListSyncs.delete(list.id);
+  if (accountListId) accountSpecialSyncs.get(accountListId)?.sync.stop();
+  accountSpecialSyncs.delete(accountListId);
   state.specialLists = state.specialLists.filter((candidate) => candidate.id !== list.id);
   activeListId = "main";
   saveState();
   render();
-  showToast(`${list.name} eliminada`);
-  if (shareId) {
-    forgetSharedPassword(shareId);
-    fetch(`${DATABASE_URL}/sharedLists/${shareId}.json`, { method: "DELETE" }).catch(() => {});
-  }
+  showToast(leavesSharedList ? `Has salido de ${list.name}` : `${list.name} eliminada`);
+  if (shareId && !leavesSharedList) forgetSharedPassword(shareId);
 }
 
 async function shareLegacySpecialList() {
@@ -1636,8 +1710,12 @@ function renderListControls() {
   actions.hidden = !list;
   if (list) {
     const shareButton = $("#specialListShare");
+    const deleteButton = $("#specialListDelete");
+    const isEditor = Boolean(list.accountListId && list.accountRole !== "owner");
     shareButton.hidden = Boolean(list.accountListId && list.accountRole !== "owner");
     shareButton.textContent = `Compartir ${list.name}`;
+    deleteButton.textContent = isEditor ? "Salir" : "Eliminar";
+    deleteButton.setAttribute("aria-label", isEditor ? `Salir de ${list.name}` : `Eliminar ${list.name}`);
   }
 }
 
@@ -1794,10 +1872,10 @@ function renderExpirations() {
 }
 
 function expirationLabel(daysLeft) {
-  if (daysLeft < 0) return `Caducó hace ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? "día" : "días"}`;
-  if (daysLeft === 0) return "Caduca hoy";
-  if (daysLeft === 1) return "Caduca mañana";
-  return `Caduca en ${daysLeft} días`;
+  if (daysLeft < 0) return `Fecha vencida hace ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? "día" : "días"}`;
+  if (daysLeft === 0) return "Fecha: hoy";
+  if (daysLeft === 1) return "Fecha: mañana";
+  return `Fecha: dentro de ${daysLeft} días`;
 }
 
 function expirationBlock(expirations, showHeading = true) {
@@ -1817,7 +1895,7 @@ function expirationBlock(expirations, showHeading = true) {
               <div><strong>${escapeHtml(entry.name)}</strong><b>${escapeHtml(expirationLabel(entry.daysLeft))}</b><small>${escapeHtml(freezeHint)}</small></div>
               <div class="expiration-card-actions">
                 <button class="expiration-edit" type="button" data-expiration-edit="${escapeHtml(entry.id)}">Cambiar fecha</button>
-                <button type="button" data-expiration-consumed="${escapeHtml(entry.id)}">Ya consumido</button>
+                <button type="button" data-expiration-consumed="${escapeHtml(entry.id)}">Ya no queda</button>
               </div>
             </article>`;
         }).join("")}
@@ -1934,14 +2012,19 @@ function resolveDuplicate(addMore) {
   const listId = currentDuplicate?.listId || "main";
   const existing = listItems(listId).find((item) => item.id === currentDuplicate?.existingId);
   if (existing && addMore) {
-    existing.quantity += currentDuplicate.entry.quantity || 1;
-    if (listId === "main") registerRequest(state, currentDuplicate.entry);
-    recordActivity("edited", existing.name, listId);
-    showToast(`Cantidad de ${existing.name}: ${existing.quantity}`);
+    const beforeQuantity = existing.quantity;
+    increaseShoppingQuantity(existing, currentDuplicate.entry.quantity || 1);
+    if (existing.quantity === beforeQuantity) {
+      showToast("La cantidad máxima es 99");
+    } else {
+      if (listId === "main") registerRequest(state, currentDuplicate.entry);
+      recordActivity("edited", existing.name, listId);
+      showToast(`Cantidad de ${existing.name}: ${existing.quantity}`);
+    }
   }
   $("#duplicateDialog").close();
   currentDuplicate = null;
-  saveState();
+  persistList(listId);
   render();
   if (duplicateQueue.length) showNextDuplicate();
 }
@@ -1968,10 +2051,7 @@ function requestFinishShopping() {
     return;
   }
   const pending = state.items.length - checked.length;
-  const checkedLabel = `${checked.length} ${checked.length === 1 ? "producto" : "productos"}`;
-  $("#finishText").textContent = pending
-    ? `Guardaré ${checkedLabel} en el historial y dejaré ${pending} pendientes en la lista.`
-    : `Guardaré ${checked.length === 1 ? "el" : "los"} ${checkedLabel} en el historial y dejaré la lista preparada para la próxima vez.`;
+  $("#finishText").textContent = shoppingFinishMessage(checked.length, pending);
   $("#finishDialog").showModal();
 }
 
@@ -2159,8 +2239,8 @@ function nativeExpirationNotificationEntries() {
           threshold,
           title: "Caducidad próxima",
           body: threshold === 3
-            ? `${entry.name} caduca en tres días. ¿Ya lo habéis consumido?`
-            : `${entry.name} caduca mañana. ¿Ya lo habéis consumido?${freeze}`,
+            ? `${entry.name}: la fecha de caducidad es dentro de tres días. ¿Ya has consumido este producto?`
+            : `${entry.name}: la fecha de caducidad es mañana. ¿Ya has consumido este producto?${freeze}`,
           at: at.toISOString(),
         });
       });
@@ -2236,31 +2316,21 @@ function markExpirationConsumed(expirationId) {
   entry.consumedAt = new Date().toISOString();
   saveState();
   render();
-  showToast(`${entry.name}: marcado como consumido`);
+  showToast(`Ya no recibirás avisos de ${entry.name}`);
 }
 
 function alertTimingText(entry) {
-  const plural = entry.name.toLocaleLowerCase("es").endsWith("s");
-  if (entry.daysLeft < 0) return plural ? "ya han caducado" : "ya ha caducado";
-  if (entry.daysLeft === 0) return plural ? "caducan hoy" : "caduca hoy";
-  if (entry.daysLeft === 1) return plural ? "caducan mañana" : "caduca mañana";
-  return `${plural ? "caducan" : "caduca"} en ${entry.daysLeft} días`;
-}
-
-function eatenPronoun(entry) {
-  const name = entry.name.toLocaleLowerCase("es");
-  if (name.endsWith("as")) return "las";
-  if (name.endsWith("os") || name.endsWith("es")) return "los";
-  if (["leche", "carne", "fruta", "verdura", "mantequilla", "nata", "mozzarella"].includes(entry.key)) return "la";
-  if (name.endsWith("a")) return "la";
-  return "lo";
+  if (entry.daysLeft < 0) return `la fecha de caducidad pasó hace ${Math.abs(entry.daysLeft)} ${Math.abs(entry.daysLeft) === 1 ? "día" : "días"}`;
+  if (entry.daysLeft === 0) return "la fecha de caducidad es hoy";
+  if (entry.daysLeft === 1) return "la fecha de caducidad es mañana";
+  return `la fecha de caducidad es dentro de ${entry.daysLeft} días`;
 }
 
 async function showExpirationNotification(entry) {
   if (NATIVE.isNative) return;
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const freeze = entry.threshold === 1 && isFreezable(entry) ? " Si no, conviene congelar este producto hoy." : "";
-  const body = `${entry.name} ${alertTimingText(entry)}. ¿Ya te ${eatenPronoun(entry)} has comido?${freeze}`;
+  const body = `${entry.name}: ${alertTimingText(entry)}. ¿Ya has consumido este producto?${freeze}`;
   try {
     if ("serviceWorker" in navigator) {
       const registration = await navigator.serviceWorker.ready;
@@ -2284,11 +2354,11 @@ function showNextExpirationAlert() {
   if (!currentExpirationAlert) return;
   const timing = alertTimingText(currentExpirationAlert);
   const freeze = currentExpirationAlert.threshold === 1 && isFreezable(currentExpirationAlert);
-  const question = `¿Ya te ${eatenPronoun(currentExpirationAlert)} has comido?`;
-  $("#expirationAlertTitle").textContent = `${currentExpirationAlert.name} ${timing}. ${question}`;
+  const question = "¿Ya has consumido este producto?";
+  $("#expirationAlertTitle").textContent = `${currentExpirationAlert.name}: ${timing}. ${question}`;
   $("#expirationAlertText").textContent = freeze
-    ? "Si todavía queda, os recomiendo congelar este producto hoy para no desperdiciarlo."
-    : "Así dejaré de avisaros si ya está consumido.";
+    ? "Si todavía queda, te recomiendo congelar este producto hoy para no desperdiciarlo."
+    : "Confírmalo para dejar de recibir estos avisos.";
   $("#expirationAlertDialog").showModal();
   speak(`${currentExpirationAlert.name} ${timing}. ${question}${freeze ? " Si no, te recomiendo congelar este producto hoy." : ""}`);
   showExpirationNotification(currentExpirationAlert);
@@ -2616,10 +2686,13 @@ document.addEventListener("click", (event) => {
     const action = itemAction.dataset.action;
     const before = { ...item };
     if (action === "toggle") item.checked = !item.checked;
-    if (action === "increase") item.quantity += 1;
+    if (action === "increase") increaseShoppingQuantity(item);
     if (action === "decrease") item.quantity = Math.max(1, item.quantity - 1);
     if (action === "remove") replaceListItems(activeListId, items.filter((entry) => entry.id !== item.id));
-    if (action === "decrease" && before.quantity === item.quantity) return;
+    if ((action === "increase" || action === "decrease") && before.quantity === item.quantity) {
+      if (action === "increase") showToast("La cantidad máxima es 99");
+      return;
+    }
     const after = action === "remove" ? null : { ...item };
     recordActivity(action === "toggle" ? item.checked ? "checked" : "unchecked" : action === "remove" ? "removed" : "edited", before.name);
     persistList();
@@ -2709,12 +2782,12 @@ $("#exportButton").addEventListener("click", exportData);
 $("#importButton").addEventListener("click", () => $("#importInput").click());
 $("#importInput").addEventListener("change", (event) => event.target.files[0] && importData(event.target.files[0]));
 $("#clearButton").addEventListener("click", () => {
-  if (!confirm("¿Seguro que quieres borrar toda la lista y el historial?")) return;
-  state = createInitialState();
+  if (!confirm("¿Borrar la lista habitual y su historial? Las listas especiales, caducidades y preferencias se conservarán.")) return;
+  clearMainListAndHistory(state);
   saveState();
   render();
   $("#settingsDialog").close();
-  showToast("Datos borrados");
+  showToast("Lista habitual e historial borrados");
 });
 
 window.addEventListener("beforeinstallprompt", (event) => event.preventDefault());
@@ -2722,7 +2795,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=46");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=49");
   serviceWorkerRegistration.update().catch(() => {});
 }
 

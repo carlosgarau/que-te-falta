@@ -1,4 +1,4 @@
-import { detectVoiceCommand, makeItem, normalizeText, parseEntry, registerRequest } from "./core.mjs";
+import { detectVoiceCommand, increaseShoppingQuantity, makeItem, normalizeText, parseEntry, registerRequest } from "./core.mjs";
 
 // This module also runs in JavaScriptCore, inside the native Siri action.
 // Use the app's parser and item format rather than a second Swift catalogue.
@@ -41,7 +41,9 @@ export function planSiriAddition(raw, text, approved = [], requestId = "", now =
         continue;
       }
       if (sameUnit) {
-        existing.quantity = Number(existing.quantity || 1) + entry.quantity;
+        const nextQuantity = Number(existing.quantity || 1) + entry.quantity;
+        if (nextQuantity > 99) throw new Error("La cantidad total no puede superar 99");
+        increaseShoppingQuantity(existing, entry.quantity);
         existing.updatedAt = new Date(now).toISOString();
         existing.siriRequestIds = [...(existing.siriRequestIds || []), requestId].slice(-30);
       } else {

@@ -8,10 +8,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="¿Qué te falta?" />
     <meta name="description" content="Tu lista familiar, con voz, memoria y sugerencias útiles." />
-    <link rel="manifest" href="manifest.webmanifest?v=46" />
+    <link rel="manifest" href="manifest.webmanifest?v=49" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="stylesheet" href="styles.css?v=46" />
+    <link rel="stylesheet" href="styles.css?v=49" />
     <title>¿Qué te falta?</title>
   </head>
   <body>
@@ -209,7 +209,7 @@
       <div class="dialog-icon finish-icon">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
       </div>
-      <span class="eyebrow">TODO COMPRADO</span>
+      <span class="eyebrow">RESUMEN DE COMPRA</span>
       <h2>¿Guardamos lo que has comprado?</h2>
       <p id="finishText"></p>
       <div class="dialog-actions">
@@ -286,7 +286,7 @@
       <h2 id="expirationAlertTitle"></h2>
       <p id="expirationAlertText"></p>
       <div class="dialog-actions">
-        <button class="primary" id="expirationConsumedYes" type="button">Sí, ya está consumido</button>
+        <button class="primary" id="expirationConsumedYes" type="button">Sí, ya no queda</button>
         <button class="secondary" id="expirationConsumedNo" type="button">No, todavía</button>
       </div>
     </dialog>
@@ -418,7 +418,7 @@
             <button id="familyDisconnectButton" type="button" hidden>Dejar de compartir</button>
           </div>
           <div class="account-list-memberships" id="accountListMemberships"></div>
-          <small class="family-privacy">Cada familiar entra con Google o Apple. Puedes quitar su acceso cuando quieras.</small>
+          <small class="family-privacy">En la lista habitual, solo su propietario puede quitar accesos.</small>
         </div>
         <div class="settings-group">
           <strong>Tus datos</strong>
@@ -445,7 +445,7 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite" aria-hidden="true" inert></div>
 
-    <script type="module" src="app.mjs?v=46"></script>
+    <script type="module" src="app.mjs?v=49"></script>
   </body>
 </html>
 

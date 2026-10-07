@@ -8,7 +8,7 @@ export function mergeStateEdits(base, local, remote, field = "") {
   if (equal(base, local)) return clone(remote);
   if (local === undefined) return undefined;
   if (field === "quantity" && [base, local, remote].every(Number.isFinite)) {
-    return Math.max(1, remote + local - base);
+    return Math.min(99, Math.max(1, remote + local - base));
   }
   if (Array.isArray(local) && (base === undefined || Array.isArray(base)) && (remote == null || Array.isArray(remote))) {
     const previous = base || [];
@@ -55,6 +55,9 @@ export class AccountStateWriter {
     const changed = !equal(record.base, state);
     record.base = clone(state);
     return changed;
+  }
+  forget(id) {
+    this.records.delete(id);
   }
   update(id, next) {
     const record = this.record(id);

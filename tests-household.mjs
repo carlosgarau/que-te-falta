@@ -45,6 +45,27 @@ test("un cambio pendiente conserva una adición ajena y una cantidad propia", ()
   ]);
 });
 
+test("dos incrementos simultáneos no pueden superar 99 unidades", () => {
+  assert.equal(mergeStateEdits(98, 99, 99, "quantity"), 99);
+});
+
+test("un incremento local y otro remoto se fusionan una sola vez", async () => {
+  const base = accountStateFrom({ items: [{ id: "a", name: "Patatas", quantity: 1 }] });
+  let remote = accountStateFrom({ items: [{ id: "a", name: "Patatas", quantity: 2 }] });
+  const writer = new AccountStateWriter({
+    read: async () => ({ state: structuredClone(remote), etag: '"2"' }),
+    write: async (_id, next) => {
+      remote = structuredClone(next);
+      return true;
+    },
+  });
+  writer.observe("familia", base);
+  await writer.update("familia", accountStateFrom({
+    items: [{ id: "a", name: "Patatas", quantity: 2 }],
+  }));
+  assert.equal(remote.items[0].quantity, 3);
+});
+
 test("un cambio pendiente no recupera un producto eliminado en otro móvil", () => {
   const base = accountStateFrom({ items: [
     { id: "a", name: "Patatas", quantity: 1 },

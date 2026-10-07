@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   addExpiration,
   categoryFor,
+  clearMainListAndHistory,
   createInitialState,
   detectVoiceCommand,
   getActiveExpirations,
@@ -12,9 +13,11 @@ import {
   getSuggestions,
   groupItems,
   hydrateState,
+  increaseShoppingQuantity,
   isFreezable,
   isPerishable,
   markExpirationAlerted,
+  makeItem,
   parseEntry,
   parseExtraPurchaseCommand,
   parseSpokenList,
@@ -23,6 +26,8 @@ import {
   registerPurchase,
   registerRequest,
   sanitizeProductPhoto,
+  shoppingFinishMessage,
+  shoppingSummary,
   updateExpiration,
   updateShoppingItem,
 } from "./core.mjs";
@@ -83,6 +88,56 @@ test("clasifica productos en familias", () => {
   assert.equal(categoryFor("aguacate"), "Fruta y verdura");
   assert.equal(categoryFor("turrón"), "Despensa");
   assert.equal(groupItems([{ category: "Bebidas" }, { category: "Despensa" }]).length, 2);
+});
+
+test("resume el final de compra con singular y plural naturales", () => {
+  assert.equal(
+    shoppingFinishMessage(1, 1),
+    "Guardaré 1 producto en el historial y dejaré 1 producto pendiente en la lista.",
+  );
+  assert.equal(
+    shoppingFinishMessage(2, 1),
+    "Guardaré 2 productos en el historial y dejaré 1 producto pendiente en la lista.",
+  );
+  assert.equal(
+    shoppingFinishMessage(1, 0),
+    "Guardaré 1 producto en el historial y dejaré la lista preparada para la próxima vez.",
+  );
+  assert.equal(
+    shoppingFinishMessage(2, 0),
+    "Guardaré 2 productos en el historial y dejaré la lista preparada para la próxima vez.",
+  );
+});
+
+test("limita las cantidades y distingue una lista vacía de una completada", () => {
+  const item = { quantity: 98 };
+  assert.equal(increaseShoppingQuantity(item), 99);
+  assert.equal(increaseShoppingQuantity(item, 4), 99);
+  assert.equal(makeItem(parseEntry("120 tomates")).quantity, 99);
+  assert.equal(hydrateState({ items: [{ id: "antiguo", name: "Tomates", quantity: 120 }] }).items[0].quantity, 99);
+  assert.equal(shoppingSummary([]), "La lista está vacía");
+  assert.equal(shoppingSummary([{ category: "Despensa", checked: true }]), "No quedan productos pendientes");
+});
+
+test("borrar la lista habitual conserva listas especiales, caducidades y preferencias", () => {
+  const state = createInitialState();
+  state.items = [{ id: "tomate" }];
+  state.catalog = { tomate: { name: "Tomate" } };
+  state.purchases = [{ id: "compra" }];
+  state.activity = [{ id: "actividad" }];
+  state.dismissedSuggestions = { "2026-10": ["tomate"] };
+  state.expirations = [{ id: "caducidad" }];
+  state.specialLists = [{ id: "navidad", name: "Navidad", items: [] }];
+  state.settings.speak = false;
+  clearMainListAndHistory(state);
+  assert.deepEqual(state.items, []);
+  assert.deepEqual(state.catalog, {});
+  assert.deepEqual(state.purchases, []);
+  assert.deepEqual(state.activity, []);
+  assert.deepEqual(state.dismissedSuggestions, {});
+  assert.deepEqual(state.expirations, [{ id: "caducidad" }]);
+  assert.deepEqual(state.specialLists, [{ id: "navidad", name: "Navidad", items: [] }]);
+  assert.equal(state.settings.speak, false);
 });
 
 test("permite editar nombre, cantidad, familia y foto de un producto", () => {
@@ -664,6 +719,174 @@ test("la lista compartida comprueba cambios aunque el canal en tiempo real no es
   }
 });
 
+test("una eliminación remota retira la lista especial local inmediatamente", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  let source = null;
+  class FakeEventSource {
+    constructor() {
+      this.listeners = {};
+      this.closed = false;
+      source = this;
+    }
+
+    addEventListener(type, callback) {
+      this.listeners[type] = callback;
+    }
+
+    close() {
+      this.closed = true;
+    }
+  }
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "invitado", displayName: "Invitado" }),
+        getIdToken: async () => "token-editor",
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      meta: { ownerId: "propietario" },
+      members: { invitado: { role: "editor" } },
+      state: { version: 2, items: [] },
+    }), { status: 200 });
+    const accountModule = await import(`./account-sharing.mjs?delete-stream=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    const statuses = [];
+    let deleted = 0;
+    const sync = accountModule.subscribeAccountList("especial", {
+      EventSourceImpl: FakeEventSource,
+      setTimeoutImpl: () => ({ unref() {} }),
+      clearTimeoutImpl: () => {},
+      onDeleted: () => { deleted += 1; },
+      onStatus: (status) => statuses.push(status),
+    });
+    await sync.ready;
+    source.listeners.put({ data: JSON.stringify({ path: "/", data: null }) });
+    assert.equal(deleted, 1);
+    assert.equal(source.closed, true);
+    assert.equal(statuses.at(-1), "removed");
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("quitar el acceso a una persona retira su copia al cancelar Firebase el canal", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  let source = null;
+  let allowed = true;
+  class FakeEventSource {
+    constructor() {
+      this.listeners = {};
+      source = this;
+    }
+
+    addEventListener(type, callback) {
+      this.listeners[type] = callback;
+    }
+
+    close() {}
+  }
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "invitado", displayName: "Invitado" }),
+        getIdToken: async () => "token-editor",
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async () => allowed
+      ? new Response(JSON.stringify({
+        meta: { ownerId: "propietario" },
+        members: { invitado: { role: "editor" } },
+        state: { version: 2, items: [] },
+      }), { status: 200 })
+      : new Response("Permission denied", { status: 403 });
+    const accountModule = await import(`./account-sharing.mjs?revoke-stream=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    let resolveDeleted;
+    const deleted = new Promise((resolve) => { resolveDeleted = resolve; });
+    const sync = accountModule.subscribeAccountList("especial", {
+      EventSourceImpl: FakeEventSource,
+      setTimeoutImpl: () => ({ unref() {} }),
+      clearTimeoutImpl: () => {},
+      onDeleted: resolveDeleted,
+    });
+    await sync.ready;
+    allowed = false;
+    source.listeners.cancel();
+    await deleted;
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("salir o eliminar una lista actualiza miembros e índices en una sola operación", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  try {
+    const run = async ({ uid, role, members, action, query }) => {
+      const requests = [];
+      globalThis.LaCompraNative = {
+        accountAuth: {
+          available: true,
+          getCurrentUser: async () => ({ uid, displayName: uid }),
+          getIdToken: async () => "token",
+          onChange: async () => {},
+        },
+      };
+      globalThis.fetch = async (url, options = {}) => {
+        requests.push({ url: String(url), method: options.method || "GET", body: options.body });
+        if ((options.method || "GET") === "GET") {
+          return new Response(JSON.stringify({
+            meta: { ownerId: "propietario" },
+            members,
+            state: { version: 2, items: [] },
+          }), { status: 200 });
+        }
+        return new Response("{}", { status: 200 });
+      };
+      const accountModule = await import(`./account-sharing.mjs?${query}=${Date.now()}`);
+      await accountModule.initializeAccountAuth();
+      await accountModule[action]("lista");
+      const patchRequest = requests.find((request) => request.method === "PATCH");
+      assert.ok(patchRequest);
+      assert.match(new URL(patchRequest.url).pathname, /\/\.json$/u);
+      return JSON.parse(patchRequest.body);
+    };
+
+    const leaveBody = await run({
+      uid: "invitado",
+      role: "editor",
+      members: { propietario: { role: "owner" }, invitado: { role: "editor" } },
+      action: "leaveAccountList",
+      query: "atomic-leave",
+    });
+    assert.equal(leaveBody["lists/lista/members/invitado"], null);
+    assert.equal(leaveBody["userLists/invitado/lista"], null);
+
+    const deleteBody = await run({
+      uid: "propietario",
+      role: "owner",
+      members: { propietario: { role: "owner" }, invitado: { role: "editor" } },
+      action: "deleteAccountList",
+      query: "atomic-delete",
+    });
+    assert.equal(deleteBody["lists/lista"], null);
+    assert.equal(deleteBody["userLists/propietario/lista"], null);
+    assert.equal(deleteBody["userLists/invitado/lista"], null);
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("identifica el proveedor que debe revalidarse al eliminar una cuenta", () => {
   assert.equal(accountProviderForDeletion({ providerId: "apple.com" }), "apple.com");
   assert.equal(accountProviderForDeletion({ providerData: [{ providerId: "google.com" }] }), "google.com");
@@ -765,12 +988,12 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=46/u);
-  assert.match(index, /app\.mjs\?v=46/u);
-  assert.match(app, /service-worker\.js\?v=46/u);
-  assert.match(worker, /que-te-falta-v46/u);
+  assert.match(index, /styles\.css\?v=49/u);
+  assert.match(index, /app\.mjs\?v=49/u);
+  assert.match(app, /service-worker\.js\?v=49/u);
+  assert.match(worker, /que-te-falta-v49/u);
   assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=45/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=48/u);
 });
 
 test("guardar una compra extra persiste su historial y caducidad sin errores", async () => {
@@ -782,6 +1005,34 @@ test("guardar una compra extra persiste su historial y caducidad sin errores", a
   assert.doesNotMatch(handler, /persistList\(listId\)/u);
   assert.match(app, /Las listas de las que seas propietario también se eliminarán para todos sus miembros/u);
   assert.doesNotMatch(app, /También se eliminarán para todos las listas/u);
+});
+
+test("los repetidos se guardan en la lista activa y los borrados explican su alcance", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const privacy = await readFile(new URL("./privacy.html", import.meta.url), "utf8");
+  const support = await readFile(new URL("./support.html", import.meta.url), "utf8");
+  const duplicateStart = app.indexOf("function resolveDuplicate(");
+  const duplicateEnd = app.indexOf("function enterShoppingMode(", duplicateStart);
+  const duplicateHandler = app.slice(duplicateStart, duplicateEnd);
+  assert.match(duplicateHandler, /persistList\(listId\)/u);
+  assert.doesNotMatch(duplicateHandler, /saveState\(\)/u);
+  assert.match(index, /Borrar lista e historial/u);
+  assert.match(app, /Las listas especiales, caducidades y preferencias se conservarán/u);
+  assert.match(privacy, /En la lista habitual,[\s\S]*Para dejar de compartir una lista especial/u);
+  assert.match(support, /En la lista habitual,[\s\S]*En una lista especial/u);
+  assert.match(app, /¿Salir de la lista “\$\{list\.name\}”\?/u);
+  assert.match(app, /Has salido de \$\{list\.name\}/u);
+});
+
+test("los avisos de caducidad no adivinan género ni mezclan interlocutores", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  assert.match(index, /RESUMEN DE COMPRA/u);
+  assert.match(index, /Sí, ya no queda/u);
+  assert.match(app, /¿Ya has consumido este producto\?/u);
+  assert.match(app, /Confírmalo para dejar de recibir estos avisos/u);
+  assert.doesNotMatch(`${index}\n${app}`, /TODO COMPRADO|eatenPronoun|Ya consumido|ya está consumido|avisaros|habéis consumido/u);
 });
 
 test("la versión Android usa identidad propia y textos coherentes con el sistema", async () => {
@@ -842,6 +1093,31 @@ test("los estados de revisión no enseñan correos ficticios ni concordancias du
   assert.match(app, /Cuenta familiar/u);
   assert.doesNotMatch(app, /Cuenta de prueba/u);
   assert.doesNotMatch(index, /para los dos/u);
+});
+
+test("las listas especiales distinguen salir de eliminar y conservan la sincronización si falla", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const sharing = await readFile(new URL("./account-sharing.mjs", import.meta.url), "utf8");
+  const start = app.indexOf("async function deleteSpecialList()");
+  const end = app.indexOf("async function shareLegacySpecialList()", start);
+  const deletion = app.slice(start, end);
+  const flushStart = app.indexOf("function flushAccountPrimarySync()");
+  const flushEnd = app.indexOf("function cleanListName(", flushStart);
+  const flush = app.slice(flushStart, flushEnd);
+  const specialStart = app.indexOf("async function initializeAccountSpecialMembership(");
+  const specialEnd = app.indexOf("async function initializeAccountDataInternal(", specialStart);
+  const special = app.slice(specialStart, specialEnd);
+  assert.match(app, /deleteButton\.textContent = isEditor \? "Salir" : "Eliminar"/u);
+  assert.match(deletion, /const sharedWithOthers = Boolean\(accountListId \|\| shareId\)/u);
+  assert.ok(deletion.indexOf("await deleteAccountList") < deletion.indexOf("sharedSyncEntry(list.id)?.sync.stop()"));
+  assert.match(index, /solo su propietario puede quitar accesos/u);
+  assert.doesNotMatch(flush, /getAccountList\(/u);
+  assert.match(flush, /observeAccountState\(listId, accountStateFrom\(base\)\)[\s\S]*updateAccountListState\(listId, local\)/u);
+  assert.ok(special.indexOf("Object.assign(local, snapshot)") < special.indexOf("observeAccountState(membership.id, remoteList.state)"));
+  assert.match(special, /onDeleted: \(\) => removeLocalAccountSpecialList/u);
+  assert.match(app, /pruneLocalAccountSpecialLists\(accountMemberships\)/u);
+  assert.match(sharing, /account-state-writer\.mjs\?v=49/u);
 });
 
 test("la interfaz conserva la identidad de nota de cocina compartida", async () => {
