@@ -765,12 +765,23 @@ test("la versión web renueva la caché con la actualización", async () => {
   const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
   const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
   const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
-  assert.match(index, /styles\.css\?v=45/u);
-  assert.match(index, /app\.mjs\?v=45/u);
-  assert.match(app, /service-worker\.js\?v=45/u);
-  assert.match(worker, /que-te-falta-v45/u);
+  assert.match(index, /styles\.css\?v=46/u);
+  assert.match(index, /app\.mjs\?v=46/u);
+  assert.match(app, /service-worker\.js\?v=46/u);
+  assert.match(worker, /que-te-falta-v46/u);
   assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
-  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=44/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=45/u);
+});
+
+test("guardar una compra extra persiste su historial y caducidad sin errores", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const start = app.indexOf("function saveExtraPurchase(");
+  const end = app.indexOf("function saveManualExpiration(", start);
+  const handler = app.slice(start, end);
+  assert.match(handler, /registerPurchase\(state, entry, now\)[\s\S]*addExpiration\(state, entry, expiresOn, now\)[\s\S]*persistList\("main"\)/u);
+  assert.doesNotMatch(handler, /persistList\(listId\)/u);
+  assert.match(app, /Las listas de las que seas propietario también se eliminarán para todos sus miembros/u);
+  assert.doesNotMatch(app, /También se eliminarán para todos las listas/u);
 });
 
 test("la versión Android usa identidad propia y textos coherentes con el sistema", async () => {

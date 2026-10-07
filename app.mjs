@@ -24,7 +24,7 @@ import {
   sanitizeProductPhoto,
   updateExpiration,
   updateShoppingItem,
-} from "./core.mjs?v=45";
+} from "./core.mjs?v=46";
 import {
   createFamilyId,
   createFamilySync,
@@ -43,11 +43,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=45";
+} from "./family-sync.mjs?v=46";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=45";
+} from "./secure-sharing.mjs?v=46";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -77,9 +77,9 @@ import {
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=45";
-import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=45";
-import { mergeStateEdits } from "./account-state-writer.mjs?v=45";
+} from "./account-sharing.mjs?v=46";
+import { describeActivity, makeActivity, mergeActivity } from "./activity.mjs?v=46";
+import { mergeStateEdits } from "./account-state-writer.mjs?v=46";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -1445,7 +1445,7 @@ async function handleAccountSignOut() {
 }
 
 async function handleDeleteAccount() {
-  if (!accountUser || !confirm("¿Eliminar tu cuenta y todos los datos que te pertenecen? También se eliminarán para todos las listas de las que seas propietario. Esta acción no se puede deshacer. Apple o Google pueden pedirte que confirmes tu identidad antes de continuar.")) return;
+  if (!accountUser || !confirm("¿Eliminar tu cuenta y todos los datos que te pertenecen? Las listas de las que seas propietario también se eliminarán para todos sus miembros. Esta acción no se puede deshacer. Apple o Google pueden pedirte que confirmes tu identidad antes de continuar.")) return;
   try {
     await deleteAccountAndData();
     stopAccountDataSync();
@@ -2010,7 +2010,7 @@ function saveExtraPurchase(entry, expiresOn, askPermission = false) {
   const now = Date.now();
   registerPurchase(state, entry, now);
   addExpiration(state, entry, expiresOn, now);
-  persistList(listId);
+  persistList("main");
   render();
   navigate("expiration");
   const message = `Caducidad guardada para ${entry.name}`;
@@ -2722,7 +2722,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=45");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=46");
   serviceWorkerRegistration.update().catch(() => {});
 }
 
