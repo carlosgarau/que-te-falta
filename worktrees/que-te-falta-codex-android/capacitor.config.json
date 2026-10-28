@@ -1,0 +1,37 @@
+{
+  "appId": "com.carlosgarau.lacompra",
+  "appName": "¿Qué te falta?",
+  "webDir": "www",
+  "backgroundColor": "#f7f4ec",
+  "ios": {
+    "contentInset": "always",
+    "preferredContentMode": "mobile",
+    "scrollEnabled": true
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "packageOptions": {
+          "@capacitor-firebase/authentication": {
+            "symlink": true
+          }
+        }
+      }
+    }
+  },
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["apple.com", "google.com"]
+    },
+    "LocalNotifications": {
+      "presentationOptions": ["badge", "sound", "banner", "list"]
+    },
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 900,
+      "backgroundColor": "#f7f4ec",
+      "showSpinner": false
+    }
+  }
+}

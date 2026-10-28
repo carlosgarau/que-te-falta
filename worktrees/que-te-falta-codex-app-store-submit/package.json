@@ -1,0 +1,32 @@
+{
+  "name": "la-compra",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.16.0",
+  "type": "module",
+  "description": "Lista familiar para web e iPhone.",
+  "scripts": {
+    "test": "node --test tests.mjs",
+    "check": "node --check app.mjs && node --check account-sharing.mjs && node --check family-sync.mjs && node --check secure-sharing.mjs && node --check native-bridge.mjs && node --test tests.mjs",
+    "check:app-store": "node scripts/validate-app-store.mjs",
+    "firebase:deploy:rules": "pnpm dlx firebase-tools@15.27.0 deploy --only database",
+    "build:web": "node scripts/build-web.mjs",
+    "ios:add": "node scripts/build-web.mjs && cap add ios",
+    "ios:sync": "node scripts/build-web.mjs && cap sync ios",
+    "ios:open": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor-firebase/authentication": "8.2.0",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.0",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/local-notifications": "8.2.1",
+    "@capacitor/share": "8.0.1",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capgo/capacitor-speech-recognition": "8.1.10"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.0",
+    "@capacitor/ios": "8.5.0"
+  }
+}

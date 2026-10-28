@@ -13,17 +13,14 @@ import {
   isFreezable,
   isPerishable,
   makeItem,
-  MAX_PRODUCT_PHOTO_DATA_URL_LENGTH,
   markExpirationAlerted,
   parseEntry,
   parseSpokenList,
   registerPurchase,
   registerRequest,
   shoppingSummary,
-  sanitizeProductPhoto,
   updateExpiration,
-  updateShoppingItem,
-} from "./core.mjs?v=35";
+} from "./core.mjs?v=30";
 import {
   createFamilyId,
   createFamilySync,
@@ -42,11 +39,11 @@ import {
   normalizeFamilyId,
   sharedStateFrom,
   sharedListIdFromUrl,
-} from "./family-sync.mjs?v=35";
+} from "./family-sync.mjs?v=30";
 import {
   createSharedPasswordCodec,
   validateSharedPassword,
-} from "./secure-sharing.mjs?v=35";
+} from "./secure-sharing.mjs?v=30";
 import {
   ACCOUNT_ACTIVE_LIST_PREFIX,
   acceptListInvite,
@@ -59,24 +56,20 @@ import {
   deleteAccountAndData,
   ensureFamilyAccountList,
   getAccountList,
-  getAccountProfile,
   getListInvite,
   getListMembers,
   initializeAccountAuth,
   leaveAccountList,
   listAccountMemberships,
   makeAccountInviteUrl,
-  mergeIntoAccountListState,
   mergeAccountState,
-  observeAccountState,
   removeListMember,
   saveAccountProfile,
-  savePrimaryFamilyListId,
   signInWithAccount,
   signOutAccount,
   subscribeAccountList,
   updateAccountListState,
-} from "./account-sharing.mjs?v=35";
+} from "./account-sharing.mjs?v=30";
 
 const STORAGE_KEY = "la-compra-state-v1";
 const DATABASE_URL = "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app";
@@ -84,7 +77,6 @@ const SHARE_BASE_URL = "https://carlosgarau.github.io/que-te-falta/";
 const NATIVE = globalThis.LaCompraNative || {};
 const SHARED_PASSWORD_STORAGE_PREFIX = "la-compra-shared-password-v1:";
 const ACCOUNT_MIGRATION_KEY_PREFIX = "que-te-falta-account-migrated:";
-const ACCOUNT_UNIFY_KEY_PREFIX = "que-te-falta-account-unified-v34:";
 const ACCOUNT_WELCOME_SEEN_KEY = "que-te-falta-account-welcome-seen-v1";
 const ACCOUNT_SESSION_RESET_KEY = "que-te-falta-account-session-reset-v29";
 const ICONS = {
@@ -143,10 +135,6 @@ let currentExpirationAlert = null;
 let recognition = null;
 let toastTimer = null;
 let nativeNotificationTimer = null;
-let editingItemId = "";
-let editingItemListId = "";
-let editingItemPhotoDataUrl = "";
-let editingItemPhotoBusy = false;
 let sharedPasswordPrompt = null;
 const unlockingShareIds = new Set();
 
@@ -157,24 +145,6 @@ function updateVisibleViewportHeight() {
 
 updateVisibleViewportHeight();
 window.visualViewport?.addEventListener("resize", updateVisibleViewportHeight);
-
-function finishQuickAddInput(input) {
-  const usesOnscreenKeyboard = NATIVE.isNative
-    || window.innerWidth <= 520
-    || window.matchMedia?.("(pointer: coarse)").matches;
-  if (!usesOnscreenKeyboard) {
-    input.focus();
-    return;
-  }
-
-  input.blur();
-  const restoreViewport = () => {
-    updateVisibleViewportHeight();
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  };
-  window.requestAnimationFrame(restoreViewport);
-  setTimeout(restoreViewport, 350);
-}
 
 function localCaptureMode() {
   if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) return "";
@@ -285,14 +255,15 @@ function saveState({ sync = true } = {}) {
   scheduleNativeExpirationNotifications();
 }
 
-function scheduleAccountPrimarySync() {
+function scheduleAccountPrimarySync(delay = 350) {
   if (!accountPrimaryList || !accountUser) return;
   clearTimeout(accountWriteTimer);
-  accountWriteTimer = null;
-  // Capture the edit before an incoming Siri/server event can replace it.
-  updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
-    .then(() => accountPrimarySync?.refresh())
-    .catch(() => setAccountStatus("offline"));
+  accountWriteTimer = setTimeout(() => {
+    accountWriteTimer = null;
+    updateAccountListState(accountPrimaryList.id, accountStateFrom(state))
+      .then(() => setAccountStatus("synced"))
+      .catch(() => setAccountStatus("offline"));
+  }, delay);
 }
 
 function cleanListName(value, fallback = "Lista especial") {
@@ -403,141 +374,6 @@ function impact(style = "light") {
     return;
   }
   navigator.vibrate?.(style === "medium" ? 35 : 20);
-}
-
-function loadProductPhoto(file) {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => resolve({ image, objectUrl });
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("No he podido abrir esta imagen"));
-    };
-    image.src = objectUrl;
-  });
-}
-
-async function compressProductPhoto(file) {
-  if (!file?.type?.startsWith("image/")) throw new Error("Elige una fotografía");
-  if (file.size > 12_000_000) throw new Error("La foto es demasiado grande");
-  const { image, objectUrl } = await loadProductPhoto(file);
-  try {
-    const naturalWidth = image.naturalWidth || image.width;
-    const naturalHeight = image.naturalHeight || image.height;
-    if (!naturalWidth || !naturalHeight) throw new Error("La foto no tiene un tamaño válido");
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d", { alpha: false });
-    if (!context) throw new Error("No he podido preparar la foto");
-    let scale = Math.min(1, 720 / Math.max(naturalWidth, naturalHeight));
-    let quality = 0.74;
-
-    for (let attempt = 0; attempt < 7; attempt += 1) {
-      canvas.width = Math.max(1, Math.round(naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(naturalHeight * scale));
-      context.fillStyle = "#fff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const compressed = sanitizeProductPhoto(canvas.toDataURL("image/jpeg", quality));
-      if (compressed) return compressed;
-      scale *= 0.8;
-      quality = Math.max(0.46, quality - 0.05);
-    }
-    throw new Error(`La foto no ha podido reducirse a menos de ${Math.round(MAX_PRODUCT_PHOTO_DATA_URL_LENGTH / 1_000)} KB`);
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
-
-function updateItemPhotoPreview() {
-  const photo = sanitizeProductPhoto(editingItemPhotoDataUrl);
-  const preview = $("#itemEditPhotoPreview");
-  const empty = $("#itemEditPhotoEmpty");
-  const remove = $("#itemEditPhotoRemove");
-  preview.hidden = !photo;
-  empty.hidden = Boolean(photo);
-  remove.hidden = !photo;
-  $("#itemEditPhotoButtonText").textContent = photo ? "Cambiar foto" : "Hacer o elegir foto";
-  if (photo) preview.src = photo;
-  else preview.removeAttribute("src");
-}
-
-function closeItemEditor() {
-  $("#itemEditDialog").close();
-  $("#itemEditForm").reset();
-  editingItemId = "";
-  editingItemListId = "";
-  editingItemPhotoDataUrl = "";
-  editingItemPhotoBusy = false;
-}
-
-function openItemEditor(itemId, listId = activeListId) {
-  const item = listItems(listId).find((entry) => entry.id === itemId);
-  if (!item) return;
-  editingItemId = item.id;
-  editingItemListId = listId;
-  editingItemPhotoDataUrl = sanitizeProductPhoto(item.photoDataUrl);
-  editingItemPhotoBusy = false;
-  $("#itemEditTitle").textContent = item.name;
-  $("#itemEditName").value = item.name;
-  $("#itemEditQuantity").value = String(Math.max(1, Number(item.quantity) || 1));
-  const category = $("#itemEditCategory");
-  if (!category.options.length) {
-    category.innerHTML = Object.keys(CATEGORY_META)
-      .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
-      .join("");
-  }
-  category.value = Object.prototype.hasOwnProperty.call(CATEGORY_META, item.category) ? item.category : "Otros";
-  $("#itemEditPhotoInput").value = "";
-  $("#itemEditSave").disabled = false;
-  updateItemPhotoPreview();
-  $("#itemEditDialog").showModal();
-}
-
-async function selectItemPhoto(event) {
-  const input = event.currentTarget;
-  const file = input.files?.[0];
-  if (!file) return;
-  editingItemPhotoBusy = true;
-  $("#itemEditSave").disabled = true;
-  $("#itemEditPhotoButton").classList.add("loading");
-  try {
-    editingItemPhotoDataUrl = await compressProductPhoto(file);
-    updateItemPhotoPreview();
-    showToast("Foto preparada");
-  } catch (error) {
-    showToast(error?.message || "No he podido preparar la foto");
-  } finally {
-    editingItemPhotoBusy = false;
-    $("#itemEditSave").disabled = false;
-    $("#itemEditPhotoButton").classList.remove("loading");
-    input.value = "";
-  }
-}
-
-function saveItemEditor(event) {
-  event.preventDefault();
-  if (editingItemPhotoBusy) return;
-  const item = listItems(editingItemListId).find((entry) => entry.id === editingItemId);
-  if (!item) {
-    closeItemEditor();
-    return;
-  }
-  try {
-    updateShoppingItem(item, {
-      name: $("#itemEditName").value,
-      quantity: $("#itemEditQuantity").value,
-      category: $("#itemEditCategory").value,
-      photoDataUrl: editingItemPhotoDataUrl,
-    });
-    persistList(editingItemListId);
-    closeItemEditor();
-    render();
-    impact("light");
-    showToast("Producto actualizado");
-  } catch (error) {
-    showToast(error?.message || "No he podido actualizar el producto");
-  }
 }
 
 async function shareOrCopy(shareData, copiedMessage, promptLabel) {
@@ -689,16 +525,6 @@ function stopAccountDataSync() {
   setAccountStatus(accountUser ? "connecting" : "local");
 }
 
-function stopLegacyFamilySyncAfterAccountMigration() {
-  if (!familyId) return;
-  familySync?.stop();
-  familySync = null;
-  forgetSharedPassword(familyId);
-  familyId = "";
-  clearFamilyAccess();
-  setFamilyStatus("local");
-}
-
 function renderAccountIdentity() {
   const name = $("#accountName");
   const email = $("#accountEmail");
@@ -727,12 +553,8 @@ function renderAccountMemberships() {
   }
   container.innerHTML = familyLists.map((entry) => `
     <div class="account-list-row">
-      <span>${escapeHtml(entry.name || "Lista familiar")}<small>${Number(entry.memberCount) > 1 ? `${Number(entry.memberCount)} personas` : "Copia anterior"}</small></span>
-      ${entry.id === accountPrimaryList?.id
-        ? '<button type="button" disabled>Abierta</button>'
-        : Number(entry.memberCount) > 1
-          ? `<button type="button" data-account-list-open="${escapeHtml(entry.id)}">Abrir</button>`
-          : '<button type="button" disabled>Respaldo</button>'}
+      <span>${escapeHtml(entry.name || "Lista familiar")}</span>
+      <button type="button" data-account-list-open="${escapeHtml(entry.id)}" ${entry.id === accountPrimaryList?.id ? "disabled" : ""}>${entry.id === accountPrimaryList?.id ? "Abierta" : "Abrir"}</button>
     </div>
   `).join("");
 }
@@ -748,7 +570,6 @@ async function initializeAccountSpecialMembership(membership) {
   if (!membership?.id || accountSpecialSyncs.has(membership.id)) return;
   const remoteList = await getAccountList(membership.id);
   if (!remoteList?.state) return;
-  observeAccountState(membership.id, remoteList.state);
   let local = state.specialLists.find((entry) => entry.accountListId === membership.id);
   if (!local) {
     local = {
@@ -787,76 +608,44 @@ async function initializeAccountDataInternal(preferredListId = "") {
   stopAccountDataSync();
   setAccountStatus("connecting");
   await saveAccountProfile();
-  const profile = await getAccountProfile();
-  const storedId = localStorage.getItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`) || "";
-  const resolution = await ensureFamilyAccountList(state, {
-    preferredId: preferredListId,
-    profileId: profile?.activeFamilyListId || "",
-    storedId,
-  });
-  const { selected, familyLists } = resolution;
-  const familyById = new Map(familyLists.map((entry) => [entry.id, entry]));
-  accountMemberships = resolution.memberships.map((entry) => familyById.get(entry.id) || entry);
-  const remoteList = selected.list || await getAccountList(selected.id);
-  observeAccountState(selected.id, remoteList?.state || {});
+  accountMemberships = await listAccountMemberships();
+  const storedId = preferredListId || localStorage.getItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`) || "";
+  const selected = await ensureFamilyAccountList(state, storedId);
+  accountMemberships = await listAccountMemberships();
+  const remoteList = await getAccountList(selected.id);
   accountPrimaryList = {
     id: selected.id,
     name: remoteList?.meta?.name || selected.name || "Mi lista familiar",
     role: remoteList?.members?.[accountUser.uid]?.role || selected.role || "editor",
-    memberCount: Object.keys(remoteList?.members || {}).length || Number(selected.memberCount) || 1,
   };
   localStorage.setItem(`${ACCOUNT_ACTIVE_LIST_PREFIX}${accountUser.uid}`, accountPrimaryList.id);
-  await savePrimaryFamilyListId(accountPrimaryList.id);
-  NATIVE.setSiriPrimaryList?.(accountUser.uid, accountPrimaryList.id).catch(() => {});
 
   const migrationKey = `${ACCOUNT_MIGRATION_KEY_PREFIX}${accountUser.uid}:${accountPrimaryList.id}`;
-  const unifyKey = `${ACCOUNT_UNIFY_KEY_PREFIX}${accountUser.uid}`;
   const needsMigration = !localStorage.getItem(migrationKey);
   const remoteState = remoteList?.state || {};
-  const needsUnification = !localStorage.getItem(unifyKey)
-    && (familyLists.length > 1 || Boolean(familyId) || needsMigration);
-  let recoveryState = accountStateFrom(state);
-  familyLists.forEach((entry) => {
-    recoveryState = mergeFamilyStates(recoveryState, entry.state || {});
-  });
-  if (needsUnification && hasFamilyData(recoveryState)) {
-    const merged = await mergeIntoAccountListState(
-      accountPrimaryList.id,
-      recoveryState,
-      mergeFamilyStates,
-    );
+  if (needsMigration && hasFamilyData(state)) {
+    const merged = mergeFamilyStates(accountStateFrom(state), remoteState);
     applyRemoteAccountState(merged, { initial: true });
+    await updateAccountListState(accountPrimaryList.id, accountStateFrom(state));
     localStorage.setItem(migrationKey, "1");
-    localStorage.setItem(unifyKey, "1");
-    showToast(familyLists.length > 1
-      ? "He reunido tus listas en la compartida"
-      : "He guardado tu lista actual en tu cuenta");
+    showToast("He guardado tu lista actual en tu cuenta");
   } else {
     applyRemoteAccountState(remoteState, { initial: true });
-    if (needsUnification) localStorage.setItem(unifyKey, "1");
   }
 
-  let initialAccountRefresh = true;
   accountPrimarySync = subscribeAccountList(accountPrimaryList.id, {
-    onState: (remote) => applyRemoteAccountState(remote, { initial: initialAccountRefresh }),
+    onState: (remote) => applyRemoteAccountState(remote),
     onStatus: setAccountStatus,
   });
-  await accountPrimarySync.ready;
-  initialAccountRefresh = false;
   await Promise.all(accountMemberships
     .filter((entry) => entry.type === "special")
     .map((entry) => initializeAccountSpecialMembership(entry).catch(() => {})));
-  stopLegacyFamilySyncAfterAccountMigration();
+  setAccountStatus("synced");
   renderFamilySharing();
 }
 
 function initializeAccountData(preferredListId = "") {
-  if (accountInitialization) {
-    if (!preferredListId) return accountInitialization;
-    return accountInitialization.then(() => (
-      accountPrimaryList?.id === preferredListId ? undefined : initializeAccountData(preferredListId)
-    ));
-  }
+  if (accountInitialization) return accountInitialization;
   accountInitialization = initializeAccountDataInternal(preferredListId)
     .catch((error) => {
       setAccountStatus("offline");
@@ -967,7 +756,6 @@ async function onAccountAuthChanged(user) {
   renderAccountIdentity();
   renderFamilySharing();
   if (!user) {
-    NATIVE.setSiriPrimaryList?.("", "").catch(() => {});
     stopAccountDataSync();
     return;
   }
@@ -1007,9 +795,7 @@ function renderFamilySharing() {
       synced: "Guardada y sincronizada para las personas autorizadas.",
       offline: "Sin conexión. Los cambios se sincronizarán cuando vuelva Internet.",
     };
-    status.textContent = accountStatus === "synced" && Number(accountPrimaryList?.memberCount) > 1
-      ? "Compartida y sincronizada con tu familia."
-      : copy[accountStatus] || "Preparando tu lista privada…";
+    status.textContent = copy[accountStatus] || "Preparando tu lista privada…";
     const owner = accountPrimaryList?.role === "owner";
     shareButton.hidden = !owner;
     shareButton.textContent = "Invitar por WhatsApp";
@@ -1017,9 +803,7 @@ function renderFamilySharing() {
     disconnectButton.hidden = true;
     badge.hidden = false;
     badge.className = `family-badge ${accountStatus}`;
-    badge.textContent = accountStatus === "synced"
-      ? Number(accountPrimaryList?.memberCount) > 1 ? "Compartida" : "Privada"
-      : accountStatus === "offline" ? "Sin conexión" : "Conectando";
+    badge.textContent = accountStatus === "synced" ? "Privada" : accountStatus === "offline" ? "Sin conexión" : "Conectando";
     return;
   }
 
@@ -1549,16 +1333,12 @@ function renderList() {
 
 function renderItem(item) {
   const amount = formatAmount(item);
-  const photo = sanitizeProductPhoto(item.photoDataUrl);
   return `
     <article class="shopping-item ${item.checked ? "checked" : ""}" data-item-id="${item.id}">
       <button class="item-check" type="button" data-action="toggle" aria-label="${item.checked ? "Desmarcar" : "Marcar"} ${escapeHtml(item.name)}">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9"/></svg>
       </button>
-      <button class="item-edit-trigger" type="button" data-item-edit="${escapeHtml(item.id)}" aria-label="Editar ${escapeHtml(item.name)}">
-        ${photo ? `<span class="item-photo-thumb"><img src="${escapeHtml(photo)}" alt="" /></span>` : ""}
-        <span class="item-copy"><strong>${escapeHtml(item.name)}</strong>${amount ? `<small>${escapeHtml(amount)}</small>` : ""}</span>
-      </button>
+      <div class="item-copy"><strong>${escapeHtml(item.name)}</strong>${amount ? `<small>${escapeHtml(amount)}</small>` : ""}</div>
       <div class="quantity-control">
         <button type="button" data-action="decrease" aria-label="Quitar uno">−</button>
         <span>${item.quantity}</span>
@@ -2357,7 +2137,7 @@ $("#addForm").addEventListener("submit", (event) => {
   const input = $("#itemInput");
   addEntries(parseSpokenList(input.value));
   input.value = "";
-  finishQuickAddInput(input);
+  input.focus();
 });
 $("#manualExpirationForm").addEventListener("submit", saveManualExpiration);
 $("#specialListForm").addEventListener("submit", saveSpecialList);
@@ -2386,17 +2166,6 @@ $("#specialListShare").addEventListener("click", () => shareSpecialList().catch(
 }));
 $("#specialListDelete").addEventListener("click", deleteSpecialList);
 $("#specialListCancel").addEventListener("click", () => $("#specialListDialog").close());
-$("#itemEditForm").addEventListener("submit", saveItemEditor);
-$("#itemEditCancel").addEventListener("click", closeItemEditor);
-$("#itemEditPhotoInput").addEventListener("change", selectItemPhoto);
-$("#itemEditPhotoRemove").addEventListener("click", () => {
-  editingItemPhotoDataUrl = "";
-  updateItemPhotoPreview();
-});
-$("#itemEditDialog").addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closeItemEditor();
-});
 $("#shoppingStart").addEventListener("click", enterShoppingMode);
 $("#finishShopping").addEventListener("click", requestFinishShopping);
 $("#finishConfirm").addEventListener("click", finishShopping);
@@ -2418,12 +2187,6 @@ document.addEventListener("click", (event) => {
 
   const listSelector = event.target.closest("[data-list-select]");
   if (listSelector) selectList(listSelector.dataset.listSelect);
-
-  const itemEdit = event.target.closest("[data-item-edit]");
-  if (itemEdit) {
-    openItemEditor(itemEdit.dataset.itemEdit);
-    return;
-  }
 
   const itemElement = event.target.closest("[data-item-id]");
   const itemAction = event.target.closest("[data-action]");
@@ -2509,7 +2272,7 @@ window.addEventListener("beforeinstallprompt", (event) => event.preventDefault()
 async function initializeAppUpdates() {
   if (NATIVE.isNative) return;
   if (!("serviceWorker" in navigator)) return;
-  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=35");
+  serviceWorkerRegistration = await navigator.serviceWorker.register("./service-worker.js?v=30");
   serviceWorkerRegistration.update().catch(() => {});
 }
 
@@ -2597,4 +2360,3 @@ async function bootstrap() {
 }
 
 bootstrap();
-

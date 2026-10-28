@@ -58,8 +58,6 @@ requireCondition(infoPlist.includes("<string>¿Qué te falta?</string>"),
   "El nombre visible en iPhone debe ser ¿Qué te falta?");
 for (const requiredText of [
   "NSMicrophoneUsageDescription",
-  "NSCameraUsageDescription",
-  "NSPhotoLibraryUsageDescription",
   "NSSpeechRecognitionUsageDescription",
   "ITSAppUsesNonExemptEncryption",
   "public.app-category.shopping",
@@ -94,7 +92,7 @@ for (const requiredText of [
 ]) {
   requireCondition(metadata.includes(requiredText), `Los metadatos no contienen ${requiredText}`);
 }
-requireCondition(metadata.includes(",Siri,"), "Los metadatos deben anunciar la integración nativa de Siri");
+requireCondition(!metadata.includes(",Siri,"), "Los metadatos no deben anunciar una integración nativa de Siri inexistente");
 
 const accountSharing = file("account-sharing.mjs");
 const nativeBridge = file("native-bridge.mjs");

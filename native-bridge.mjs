@@ -8,7 +8,6 @@ const Share = plugins.Share;
 const SplashScreen = plugins.SplashScreen;
 const SpeechRecognition = plugins.SpeechRecognition;
 const FirebaseAuthentication = plugins.FirebaseAuthentication;
-const SiriShopping = plugins.SiriShopping;
 let speechListenerHandles = [];
 let accountAuthListenerHandle = null;
 
@@ -65,7 +64,7 @@ async function removeSpeechListeners() {
 async function startSpeechRecognition({ onPartial, onStopped, onError }) {
   if (!SpeechRecognition) throw new Error("El reconocimiento de voz no está disponible");
   const availability = await SpeechRecognition.available();
-  if (!availability.available) throw new Error("Este dispositivo no permite reconocimiento de voz");
+  if (!availability.available) throw new Error("Este iPhone no permite reconocimiento de voz");
   let permission = await SpeechRecognition.checkPermissions();
   if (permission.speechRecognition !== "granted") {
     permission = await SpeechRecognition.requestPermissions();
@@ -145,9 +144,9 @@ globalThis.LaCompraNative = {
       if (!FirebaseAuthentication) return null;
       return (await FirebaseAuthentication.getCurrentUser()).user || null;
     },
-    async getIdToken(forceRefresh = false) {
+    async getIdToken() {
       if (!FirebaseAuthentication) throw new Error("El acceso seguro no está disponible");
-      return (await FirebaseAuthentication.getIdToken({ forceRefresh: Boolean(forceRefresh) })).token;
+      return (await FirebaseAuthentication.getIdToken()).token;
     },
     async signIn(provider) {
       if (!FirebaseAuthentication) throw new Error("El acceso seguro no está disponible");
@@ -183,13 +182,6 @@ globalThis.LaCompraNative = {
 };
 
 const initialLaunchUrl = isNative && App?.getLaunchUrl ? App.getLaunchUrl().catch(() => null) : Promise.resolve(null);
-
-globalThis.LaCompraNative.setSiriPrimaryList = async (uid = "", listId = "") => {
-  if (SiriShopping) await SiriShopping.setPrimaryList({ uid, listId });
-};
-SiriShopping?.addListener("listChanged", () => {
-  document.dispatchEvent(new CustomEvent("la-compra:native-active"));
-});
 
 if (isNative) {
   App?.addListener("appStateChange", ({ isActive }) => {

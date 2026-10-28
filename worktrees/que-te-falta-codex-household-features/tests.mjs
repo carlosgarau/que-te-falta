@@ -1,0 +1,1210 @@
+import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
+import test from "node:test";
+import {
+  addExpiration,
+  categoryFor,
+  clearMainListAndHistory,
+  createInitialState,
+  detectVoiceCommand,
+  getActiveExpirations,
+  getPendingExpirationAlerts,
+  getPreviouslyPurchased,
+  getSuggestions,
+  groupItems,
+  hydrateState,
+  increaseShoppingQuantity,
+  isFreezable,
+  isPerishable,
+  markExpirationAlerted,
+  makeItem,
+  parseEntry,
+  parseExtraPurchaseCommand,
+  parseSpokenList,
+  parseSpokenExpiryDate,
+  productKey,
+  registerPurchase,
+  registerRequest,
+  sanitizeProductPhoto,
+  shoppingFinishMessage,
+  shoppingSummary,
+  updateExpiration,
+  updateShoppingItem,
+} from "./core.mjs";
+import {
+  createFamilyId,
+  createFamilySync,
+  createSharedListSync,
+  expireFamilyCookie,
+  familyCookiePathFromUrl,
+  familyIdFromCookie,
+  familyIdFromUrl,
+  FAMILY_COOKIE_MAX_AGE,
+  FAMILY_COOKIE_NAME,
+  makeFamilyCookie,
+  makeFamilyShareUrl,
+  makeSharedListUrl,
+  mergeFamilyStates,
+  mergeSharedState,
+  sharedListIdFromUrl,
+  sharedStateFrom,
+} from "./family-sync.mjs";
+import {
+  createSharedPasswordCodec,
+  isEncryptedSharedRecord,
+  validateSharedPassword,
+} from "./secure-sharing.mjs";
+import {
+  accountProviderForDeletion,
+  accountInviteFromUrl,
+  accountStateFrom,
+  clearAccountInviteFromUrl,
+  makeAuthenticatedDatabaseUrl,
+  makeAccountInviteUrl,
+  mergeAccountState,
+  normalizeAccountUser,
+  selectPrimaryFamilyAccountList,
+} from "./account-sharing.mjs";
+
+test("separa una frase con varios productos", () => {
+  const entries = parseSpokenList("Añade leche, pan y dos kilos de patatas a la lista de la compra");
+  assert.deepEqual(entries.map(({ key, quantity, unit }) => ({ key, quantity, unit })), [
+    { key: "leche", quantity: 1, unit: "" },
+    { key: "pan", quantity: 1, unit: "" },
+    { key: "patata", quantity: 2, unit: "kilos" },
+  ]);
+});
+
+test("normaliza plurales habituales para detectar repetidos", () => {
+  assert.equal(productKey("Fresas"), "fresa");
+  assert.equal(productKey("los huevos"), "huevo");
+  assert.equal(parseEntry("3 yogures").key, "yogur");
+});
+
+test("clasifica productos en familias", () => {
+  assert.equal(categoryFor("leche entera"), "Lácteos y huevos");
+  assert.equal(categoryFor("pañales talla 5"), "Bebés y niños");
+  assert.equal(categoryFor("tomates cherry"), "Fruta y verdura");
+  assert.equal(categoryFor("aguacate"), "Fruta y verdura");
+  assert.equal(categoryFor("turrón"), "Despensa");
+  assert.equal(groupItems([{ category: "Bebidas" }, { category: "Despensa" }]).length, 2);
+});
+
+test("resume el final de compra con singular y plural naturales", () => {
+  assert.equal(
+    shoppingFinishMessage(1, 1),
+    "Guardaré 1 producto en el historial y dejaré 1 producto pendiente en la lista.",
+  );
+  assert.equal(
+    shoppingFinishMessage(2, 1),
+    "Guardaré 2 productos en el historial y dejaré 1 producto pendiente en la lista.",
+  );
+  assert.equal(
+    shoppingFinishMessage(1, 0),
+    "Guardaré 1 producto en el historial y dejaré la lista preparada para la próxima vez.",
+  );
+  assert.equal(
+    shoppingFinishMessage(2, 0),
+    "Guardaré 2 productos en el historial y dejaré la lista preparada para la próxima vez.",
+  );
+});
+
+test("limita las cantidades y distingue una lista vacía de una completada", () => {
+  const item = { quantity: 98 };
+  assert.equal(increaseShoppingQuantity(item), 99);
+  assert.equal(increaseShoppingQuantity(item, 4), 99);
+  assert.equal(makeItem(parseEntry("120 tomates")).quantity, 99);
+  assert.equal(hydrateState({ items: [{ id: "antiguo", name: "Tomates", quantity: 120 }] }).items[0].quantity, 99);
+  assert.equal(shoppingSummary([]), "La lista está vacía");
+  assert.equal(shoppingSummary([{ category: "Despensa", checked: true }]), "No quedan productos pendientes");
+});
+
+test("borrar la lista habitual conserva listas especiales, caducidades y preferencias", () => {
+  const state = createInitialState();
+  state.items = [{ id: "tomate" }];
+  state.catalog = { tomate: { name: "Tomate" } };
+  state.purchases = [{ id: "compra" }];
+  state.activity = [{ id: "actividad" }];
+  state.dismissedSuggestions = { "2026-10": ["tomate"] };
+  state.expirations = [{ id: "caducidad" }];
+  state.specialLists = [{ id: "navidad", name: "Navidad", items: [] }];
+  state.settings.speak = false;
+  clearMainListAndHistory(state);
+  assert.deepEqual(state.items, []);
+  assert.deepEqual(state.catalog, {});
+  assert.deepEqual(state.purchases, []);
+  assert.deepEqual(state.activity, []);
+  assert.deepEqual(state.dismissedSuggestions, {});
+  assert.deepEqual(state.expirations, [{ id: "caducidad" }]);
+  assert.deepEqual(state.specialLists, [{ id: "navidad", name: "Navidad", items: [] }]);
+  assert.equal(state.settings.speak, false);
+});
+
+test("permite editar nombre, cantidad, familia y foto de un producto", () => {
+  const photoDataUrl = "data:image/jpeg;base64,QUJDRA==";
+  const item = {
+    id: "producto-1",
+    key: "tomate",
+    name: "Tomate",
+    category: "Fruta y verdura",
+    quantity: 1,
+    unit: "",
+    checked: false,
+  };
+  updateShoppingItem(item, {
+    name: "Tomate cherry",
+    quantity: 3,
+    category: "Otros",
+    photoDataUrl,
+  }, Date.UTC(2026, 8, 7));
+  assert.equal(item.key, "tomate cherry");
+  assert.equal(item.name, "Tomate cherry");
+  assert.equal(item.quantity, 3);
+  assert.equal(item.category, "Otros");
+  assert.equal(item.photoDataUrl, photoDataUrl);
+  assert.equal(item.updatedAt, "2026-09-07T00:00:00.000Z");
+
+  updateShoppingItem(item, { name: "Tomate cherry", quantity: 0, photoDataUrl: "" });
+  assert.equal(item.quantity, 1);
+  assert.equal(item.category, "Otros");
+  assert.equal("photoDataUrl" in item, false);
+});
+
+test("solo conserva fotos de producto pequeñas y seguras", () => {
+  const photoDataUrl = "data:image/jpeg;base64,QUJDRA==";
+  assert.equal(sanitizeProductPhoto(photoDataUrl), photoDataUrl);
+  assert.equal(sanitizeProductPhoto("javascript:alert(1)"), "");
+  const state = hydrateState({
+    items: [{ id: "1", name: "Leche", photoDataUrl }],
+    specialLists: [{ id: "navidad", name: "Navidad", items: [{ id: "2", name: "Uvas", photoDataUrl: "https://example.com/foto.jpg" }] }],
+  });
+  assert.equal(state.items[0].photoDataUrl, photoDataUrl);
+  assert.equal("photoDataUrl" in state.specialLists[0].items[0], false);
+});
+
+test("reconoce comandos de compra", () => {
+  assert.equal(detectVoiceCommand("Voy a hacer la compra").type, "shopping");
+  assert.equal(detectVoiceCommand("leer la lista").type, "read");
+  assert.equal(detectVoiceCommand("¿Qué hay en la lista de la compra?").type, "read");
+  assert.equal(detectVoiceCommand("Hay en la lista de la compra").type, "read");
+  assert.equal(detectVoiceCommand("Hay").type, "read");
+  assert.equal(detectVoiceCommand("Qué ingredientes hay en la lista de la compra").type, "read");
+  assert.equal(detectVoiceCommand("Qué productos tengo en mi lista").type, "read");
+  assert.equal(detectVoiceCommand("Cuáles son los ingredientes de la lista de la compra").type, "read");
+  assert.equal(detectVoiceCommand("Dime qué hay en mi lista de la compra").type, "read");
+  assert.equal(detectVoiceCommand("Qué tengo en la lista de la compra").type, "read");
+  assert.equal(detectVoiceCommand("Léeme la lista").type, "read");
+  assert.equal(detectVoiceCommand("He terminado la compra").type, "finish");
+  assert.equal(detectVoiceCommand("Hazme la lista final que voy a comprar").type, "shopping");
+  assert.equal(detectVoiceCommand("Muéstrame la lista de la compra").type, "show-list");
+});
+
+test("entiende fechas de caducidad dichas en voz alta", () => {
+  const now = new Date(2026, 6, 16, 10).getTime();
+  assert.equal(parseSpokenExpiryDate("caducan en tres días", now), "2026-07-19");
+  assert.equal(parseSpokenExpiryDate("caduca el 25 de julio", now), "2026-07-25");
+  assert.equal(parseSpokenExpiryDate("caduca mañana", now), "2026-07-17");
+});
+
+test("registra una compra extra con producto y fecha dictados", () => {
+  const now = new Date(2026, 6, 16, 10).getTime();
+  const command = parseExtraPurchaseCommand("He comprado hamburguesas extra que caducan en tres días", now);
+  assert.equal(command.type, "extra-expiration");
+  assert.equal(command.entry.key, "hamburguesa");
+  assert.equal(command.expiresOn, "2026-07-19");
+  const incomplete = detectVoiceCommand("He comprado algo extra que caduque");
+  assert.equal(incomplete.type, "extra-expiration");
+  assert.equal(incomplete.entry, null);
+});
+
+test("sugiere un producto olvidado según el historial", () => {
+  const state = createInitialState();
+  const entry = parseEntry("leche");
+  const fiftyDays = 50 * 86_400_000;
+  registerRequest(state, entry, 0);
+  registerPurchase(state, { ...entry, id: "1" }, 0);
+  const ideas = getSuggestions(state, fiftyDays);
+  assert.equal(ideas.remembered[0].key, "leche");
+});
+
+test("no sugiere algo que ya está en la lista", () => {
+  const state = createInitialState();
+  const entry = parseEntry("leche");
+  registerRequest(state, entry, 0);
+  registerPurchase(state, { ...entry, id: "1" }, 0);
+  state.items.push({ ...entry, id: "2", checked: false });
+  assert.equal(getSuggestions(state, 50 * 86_400_000).remembered.length, 0);
+});
+
+test("detecta productos delicados y cuáles se pueden congelar", () => {
+  assert.equal(isPerishable(parseEntry("hamburguesas")), true);
+  assert.equal(isFreezable(parseEntry("hamburguesas")), true);
+  assert.equal(isPerishable(parseEntry("detergente")), false);
+  assert.equal(isFreezable(parseEntry("yogures")), false);
+});
+
+test("avisa a tres días y vuelve a avisar a un día", () => {
+  const state = createInitialState();
+  const item = parseEntry("hamburguesas");
+  const firstCheck = new Date(2026, 6, 16, 10).getTime();
+  const expiration = addExpiration(state, item, "2026-07-19", firstCheck);
+  assert.equal(getActiveExpirations(state, firstCheck)[0].daysLeft, 3);
+  assert.equal(getPendingExpirationAlerts(state, firstCheck)[0].threshold, 3);
+
+  markExpirationAlerted(state, expiration.id, 3);
+  assert.equal(getPendingExpirationAlerts(state, firstCheck).length, 0);
+  const secondCheck = new Date(2026, 6, 18, 10).getTime();
+  assert.equal(getPendingExpirationAlerts(state, secondCheck)[0].threshold, 1);
+});
+
+test("permite cambiar una caducidad y reinicia sus avisos", () => {
+  const state = createInitialState();
+  const item = parseEntry("patatas");
+  const now = new Date(2026, 7, 14, 10).getTime();
+  const expiration = addExpiration(state, item, "2026-08-17", now);
+  markExpirationAlerted(state, expiration.id, 3);
+
+  const updated = updateExpiration(state, expiration.id, "2026-08-19", now + 1000);
+  assert.equal(updated.id, expiration.id);
+  assert.equal(updated.expiresOn, "2026-08-19");
+  assert.deepEqual(updated.alertsSent, []);
+  assert.equal(getActiveExpirations(state, now)[0].daysLeft, 5);
+});
+
+test("ofrece productos comprados anteriormente sin duplicados ni activos", () => {
+  const state = createInitialState();
+  const milk = parseEntry("leche");
+  const bread = parseEntry("pan");
+  registerPurchase(state, milk, new Date(2026, 7, 12, 10).getTime());
+  registerPurchase(state, bread, new Date(2026, 7, 13, 10).getTime());
+  registerPurchase(state, milk, new Date(2026, 7, 14, 10).getTime());
+
+  const previous = getPreviouslyPurchased(state, [bread]);
+  assert.deepEqual(previous.map((entry) => entry.key), [milk.key]);
+  assert.equal(previous[0].name, "Leche");
+});
+
+test("crea y reconoce enlaces familiares privados", () => {
+  const fakeCrypto = {
+    getRandomValues(bytes) {
+      bytes.forEach((_, index) => { bytes[index] = index + 1; });
+      return bytes;
+    },
+  };
+  const familyId = createFamilyId(fakeCrypto);
+  assert.equal(familyId.length, 43);
+  const url = makeFamilyShareUrl("https://example.com/que-te-falta/?command=pan#lista", familyId);
+  assert.equal(familyIdFromUrl(url), familyId);
+  assert.equal(new URL(url).searchParams.has("command"), false);
+});
+
+test("traspasa la familia de Safari a la app instalada mediante cookie", () => {
+  const familyId = "f".repeat(43);
+  const sharedUrl = makeFamilyShareUrl("https://example.com/que-te-falta/", familyId);
+  const cookiePath = familyCookiePathFromUrl(sharedUrl);
+  const setCookie = makeFamilyCookie(familyId, cookiePath);
+  const cookieHeader = setCookie.split(";")[0];
+
+  assert.equal(cookiePath, "/que-te-falta/");
+  assert.equal(familyIdFromUrl(sharedUrl), familyId);
+  assert.equal(familyIdFromCookie(cookieHeader), familyId);
+  assert.match(setCookie, new RegExp(`^${FAMILY_COOKIE_NAME}=${familyId};`));
+  assert.match(setCookie, new RegExp(`Max-Age=${FAMILY_COOKIE_MAX_AGE}`));
+  assert.match(setCookie, /Path=\/que-te-falta\/; SameSite=Strict; Secure$/);
+  assert.match(expireFamilyCookie(cookiePath), /Max-Age=0; Path=\/que-te-falta\//);
+});
+
+test("ignora cookies familiares manipuladas o incompletas", () => {
+  assert.equal(familyIdFromCookie(`${FAMILY_COOKIE_NAME}=demasiado-corta`), "");
+  assert.equal(familyIdFromCookie(`otra=1; ${FAMILY_COOKIE_NAME}=${"%".repeat(43)}`), "");
+  assert.equal(familyIdFromCookie("otra=1"), "");
+});
+
+test("crea un enlace aislado para una sola lista especial", () => {
+  const listId = "N".repeat(43);
+  const url = makeSharedListUrl("https://example.com/que-te-falta/?familia=secreto&command=pan", listId);
+  assert.equal(sharedListIdFromUrl(url), listId);
+  assert.equal(new URL(url).searchParams.has("familia"), false);
+  assert.equal(new URL(url).searchParams.has("command"), false);
+});
+
+test("conserva listas especiales, nombre, artículos y enlace al hidratar", () => {
+  const shareId = "s".repeat(43);
+  const hydrated = hydrateState({
+    specialLists: [{
+      id: "navidad",
+      name: "navidad",
+      shareId,
+      items: [{ id: "1", key: "turron", name: "Turrón", quantity: 1, checked: false }],
+    }],
+  });
+  assert.equal(hydrated.specialLists[0].name, "Navidad");
+  assert.equal(hydrated.specialLists[0].shareId, shareId);
+  assert.equal(hydrated.specialLists[0].items[0].key, "turron");
+});
+
+test("mantiene las preferencias de voz fuera de la lista compartida", () => {
+  const local = createInitialState();
+  local.settings.speak = false;
+  const shared = sharedStateFrom(local);
+  assert.equal("settings" in shared, false);
+  assert.equal(mergeSharedState(shared, local.settings).settings.speak, false);
+});
+
+test("recupera una lista local antigua cuando la lista familiar está vacía", () => {
+  const local = createInitialState();
+  local.items.push({ id: "tomate", key: "tomate", name: "Tomate", quantity: 1, checked: false });
+  local.expirations.push({ id: "carne", key: "carne", name: "Carne", expiresOn: "2026-07-21" });
+  const merged = mergeFamilyStates(local, { version: 1 });
+  assert.equal(merged.items[0].name, "Tomate");
+  assert.equal(merged.expirations[0].name, "Carne");
+  assert.equal("settings" in merged, false);
+});
+
+test("une dos listas existentes sin borrar productos ni listas especiales", () => {
+  const local = createInitialState();
+  local.items.push({ id: "pan", key: "pan", name: "Pan", quantity: 1, checked: false });
+  local.specialLists.push({
+    id: "navidad",
+    name: "Navidad",
+    items: [{ id: "uvas", key: "uva", name: "Uvas", quantity: 1, checked: false }],
+  });
+  const remote = createInitialState();
+  remote.items.push({ id: "leche", key: "leche", name: "Leche", quantity: 1, checked: false });
+  remote.specialLists.push({
+    id: "navidad",
+    name: "Cena de Navidad",
+    items: [{ id: "turron", key: "turron", name: "Turrón", quantity: 1, checked: false }],
+  });
+  const merged = mergeFamilyStates(local, remote);
+  assert.deepEqual(merged.items.map((item) => item.name).sort(), ["Leche", "Pan"]);
+  assert.equal(merged.specialLists[0].name, "Cena de Navidad");
+  assert.deepEqual(merged.specialLists[0].items.map((item) => item.name).sort(), ["Turrón", "Uvas"]);
+});
+
+test("sube la primera lista y descarga la misma lista en otro móvil", async () => {
+  let remote = null;
+  const fetchImpl = async (_url, options = {}) => {
+    if ((options.method || "GET") === "GET") {
+      return { ok: true, status: 200, json: async () => remote };
+    }
+    const body = JSON.parse(options.body);
+    remote = { ...body, updatedAt: 1234 };
+    return { ok: true, status: 200, json: async () => remote };
+  };
+  const familyId = "a".repeat(43);
+  const local = createInitialState();
+  local.items.push({ id: "1", key: "tomate", name: "Tomate", quantity: 1, checked: false });
+
+  const first = createFamilySync({
+    databaseUrl: "https://example.test",
+    familyId,
+    deviceId: "movil-1",
+    fetchImpl,
+    EventSourceImpl: null,
+  });
+  await first.start(local);
+  assert.equal(remote.state.items[0].key, "tomate");
+  assert.equal("settings" in remote.state, false);
+
+  let downloaded = null;
+  const second = createFamilySync({
+    databaseUrl: "https://example.test",
+    familyId,
+    deviceId: "movil-2",
+    fetchImpl,
+    EventSourceImpl: null,
+    onRemoteState: (next) => { downloaded = next; },
+  });
+  await second.start(createInitialState());
+  assert.equal(downloaded.items[0].name, "Tomate");
+});
+
+test("usa una colección independiente para una lista especial compartida", () => {
+  const sync = createSharedListSync({
+    databaseUrl: "https://example.test/",
+    listId: "x".repeat(43),
+    deviceId: "movil-1",
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => null }),
+    EventSourceImpl: null,
+  });
+  assert.equal(sync.endpoint, `https://example.test/sharedLists/${"x".repeat(43)}.json`);
+  sync.stop();
+});
+
+test("cifra una lista compartida y la abre únicamente con su contraseña", async () => {
+  const owner = createSharedPasswordCodec("Nevera casa 2026");
+  const protectedState = await owner.encrypt({ items: [{ name: "Tomates" }] });
+  assert.equal(isEncryptedSharedRecord({ encryptedState: protectedState }), true);
+
+  const invited = createSharedPasswordCodec("Nevera casa 2026");
+  assert.deepEqual(await invited.decrypt(protectedState), { items: [{ name: "Tomates" }] });
+
+  const intruder = createSharedPasswordCodec("Otra clave distinta");
+  await assert.rejects(
+    intruder.decrypt(protectedState),
+    (error) => error.code === "WRONG_SHARED_PASSWORD",
+  );
+});
+
+test("no permite contraseñas demasiado cortas", () => {
+  assert.throws(() => validateSharedPassword("1234567"), /al menos 8 caracteres/);
+  assert.equal(validateSharedPassword("una clave segura"), "una clave segura");
+});
+
+test("sincroniza una familia cifrada sin guardar el contenido en claro", async () => {
+  let remote = null;
+  const fetchImpl = async (_url, options = {}) => {
+    if ((options.method || "GET") === "GET") {
+      return { ok: true, status: 200, json: async () => remote };
+    }
+    const body = JSON.parse(options.body);
+    remote = { ...body, updatedAt: 1234 };
+    return { ok: true, status: 200, json: async () => remote };
+  };
+  const familyId = "z".repeat(43);
+  const local = createInitialState();
+  local.items.push({ id: "1", key: "tomate", name: "Tomate", quantity: 1, checked: false });
+
+  const owner = createFamilySync({
+    databaseUrl: "https://example.test",
+    familyId,
+    deviceId: "movil-1",
+    fetchImpl,
+    EventSourceImpl: null,
+    codec: createSharedPasswordCodec("Nevera casa 2026"),
+  });
+  await owner.start(local);
+  assert.equal("state" in remote, false);
+  assert.equal(isEncryptedSharedRecord(remote), true);
+  assert.doesNotMatch(remote.encryptedState.ciphertext, /Tomate/);
+
+  let downloaded = null;
+  const invited = createFamilySync({
+    databaseUrl: "https://example.test",
+    familyId,
+    deviceId: "movil-2",
+    fetchImpl,
+    EventSourceImpl: null,
+    codec: createSharedPasswordCodec("Nevera casa 2026"),
+    onRemoteState: (next) => { downloaded = next; },
+  });
+  await invited.start(createInitialState());
+  assert.equal(downloaded.items[0].name, "Tomate");
+});
+
+test("crea invitaciones de cuenta sin exponer otra lista", () => {
+  const url = makeAccountInviteUrl("https://carlosgarau.github.io/que-te-falta/", "abc_123");
+  assert.equal(accountInviteFromUrl(url), "abc_123");
+  assert.equal(clearAccountInviteFromUrl(url), "/que-te-falta/");
+  assert.equal(new URL(url).searchParams.has("familia"), false);
+  assert.equal(new URL(url).searchParams.has("lista"), false);
+});
+
+test("autentica Realtime Database con el token de Firebase en el parámetro auth", () => {
+  const url = new URL(makeAuthenticatedDatabaseUrl(
+    "lists/lista-1",
+    "token+/= con espacios",
+    "https://example.firebaseio.test/",
+  ));
+  assert.equal(url.origin, "https://example.firebaseio.test");
+  assert.equal(url.pathname, "/lists/lista-1.json");
+  assert.equal(url.searchParams.get("auth"), "token+/= con espacios");
+});
+
+test("abre la lista compartida aunque el móvil recuerde una copia privada", () => {
+  const privateList = {
+    id: "privada",
+    type: "family",
+    memberCount: 1,
+    updatedAt: 200,
+  };
+  const sharedList = {
+    id: "compartida",
+    type: "family",
+    memberCount: 2,
+    updatedAt: 100,
+  };
+  assert.equal(selectPrimaryFamilyAccountList(
+    [privateList, sharedList],
+    { storedId: "privada", profileId: "privada" },
+  ).id, "compartida");
+});
+
+test("una invitación abre expresamente la lista indicada", () => {
+  const lists = [
+    { id: "familia-a", type: "family", memberCount: 3, updatedAt: 300 },
+    { id: "familia-b", type: "family", memberCount: 2, updatedAt: 200 },
+  ];
+  assert.equal(selectPrimaryFamilyAccountList(lists, { preferredId: "familia-b" }).id, "familia-b");
+});
+
+test("la lista principal guardada en la cuenta gana entre varias compartidas", () => {
+  const lists = [
+    { id: "familia-a", type: "family", memberCount: 2, updatedAt: 300 },
+    { id: "familia-b", type: "family", memberCount: 2, updatedAt: 200 },
+  ];
+  assert.equal(selectPrimaryFamilyAccountList(lists, { profileId: "familia-b" }).id, "familia-b");
+});
+
+test("la actualización reúne copias sin borrarlas y conserva la lista principal en la cuenta", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const accountSharing = await readFile(new URL("./account-sharing.mjs", import.meta.url), "utf8");
+  const nativeBridge = await readFile(new URL("./native-bridge.mjs", import.meta.url), "utf8");
+  assert.match(app, /familyLists\.forEach\([\s\S]*mergeFamilyStates/u);
+  assert.match(app, /mergeIntoAccountListState\(/u);
+  assert.match(app, /stopLegacyFamilySyncAfterAccountMigration\(\)/u);
+  assert.match(accountSharing, /activeFamilyListId/u);
+  assert.match(accountSharing, /method: "PATCH"/u);
+  assert.match(nativeBridge, /getIdToken\(\{ forceRefresh: Boolean\(forceRefresh\) \}\)/u);
+  assert.equal(app.includes("deleteAccountList(selected.id)"), false);
+});
+
+test("renueva el token y fusiona cambios concurrentes antes de guardar", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  const tokenRefreshes = [];
+  const requests = [];
+  let profileAttempts = 0;
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "usuario-1", displayName: "Usuario" }),
+        getIdToken: async (forceRefresh) => {
+          tokenRefreshes.push(Boolean(forceRefresh));
+          return forceRefresh ? "token-renovado" : "token-inicial";
+        },
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async (url, options = {}) => {
+      requests.push({ url: String(url), options });
+      if (String(url).includes("/userProfiles/usuario-1.json")) {
+        profileAttempts += 1;
+        if (profileAttempts === 1) return new Response("null", { status: 401 });
+        return new Response(JSON.stringify({ activeFamilyListId: "compartida" }), { status: 200 });
+      }
+      if (String(url).includes("/lists/compartida/state.json") && (options.method || "GET") === "GET") {
+        return new Response(JSON.stringify({
+          version: 2,
+          items: [{ id: "remoto", key: "leche", name: "Leche", quantity: 1, checked: false }],
+        }), { status: 200, headers: { etag: '"estado-1"' } });
+      }
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    const accountModule = await import(`./account-sharing.mjs?sync-test=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    const profile = await accountModule.getAccountProfile();
+    assert.equal(profile.activeFamilyListId, "compartida");
+    assert.deepEqual(tokenRefreshes.slice(0, 2), [false, true]);
+
+    const merged = await accountModule.mergeIntoAccountListState("compartida", {
+      version: 2,
+      items: [{ id: "local", key: "pan", name: "Pan", quantity: 1, checked: false }],
+    }, mergeFamilyStates);
+    assert.deepEqual(merged.items.map((item) => item.name).sort(), ["Leche", "Pan"]);
+    const conditionalWrite = requests.find((entry) => (
+      entry.options.method === "PUT" && entry.options.headers?.["if-match"]
+    ));
+    assert.equal(conditionalWrite.options.headers["if-match"], '"estado-1"');
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("un invitado termina la preparaci�n sin intentar editar metadatos del propietario", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+  let remoteState = {
+    version: 2,
+    items: [{ id: "owner-item", key: "leche", name: "Leche", quantity: 1, checked: false }],
+  };
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "invitado", displayName: "Invitado" }),
+        getIdToken: async () => "token-editor",
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async (url, options = {}) => {
+      const request = { url: String(url), method: options.method || "GET", options };
+      requests.push(request);
+      if (request.url.includes("/lists/compartida/state.json")) {
+        if (request.method === "PUT") remoteState = JSON.parse(options.body);
+        return new Response(JSON.stringify(remoteState), {
+          status: 200,
+          headers: { etag: '"editor-state"' },
+        });
+      }
+      if (request.url.includes("/lists/compartida.json")) {
+        return new Response(JSON.stringify({
+          meta: { ownerId: "propietario" },
+          members: { propietario: { role: "owner" }, invitado: { role: "editor" } },
+          state: remoteState,
+        }), { status: 200 });
+      }
+      if (request.url.includes("/meta/")) return new Response("Permission denied", { status: 403 });
+      return new Response("null", { status: 200 });
+    };
+
+    const accountModule = await import(`./account-sharing.mjs?editor-sync=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    const merged = await accountModule.mergeIntoAccountListState("compartida", {
+      version: 2,
+      items: [{ id: "guest-item", key: "pan", name: "Pan", quantity: 1, checked: false }],
+    }, mergeFamilyStates);
+
+    assert.deepEqual(merged.items.map((item) => item.key).sort(), ["leche", "pan"]);
+    assert.equal(requests.some((request) => request.url.includes("/meta/")), false);
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("la lista compartida comprueba cambios aunque el canal en tiempo real no est� disponible", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  const timers = [];
+  let remoteState = {
+    version: 2,
+    items: [{ id: "initial", key: "leche", name: "Leche", quantity: 1, checked: false }],
+  };
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "invitado", displayName: "Invitado" }),
+        getIdToken: async () => "token-editor",
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      meta: { ownerId: "propietario" },
+      state: remoteState,
+    }), { status: 200 });
+
+    const accountModule = await import(`./account-sharing.mjs?poll-sync=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    const received = [];
+    const sync = accountModule.subscribeAccountList("compartida", {
+      EventSourceImpl: null,
+      pollIntervalMs: 1,
+      setTimeoutImpl: (callback) => {
+        timers.push(callback);
+        return { unref() {} };
+      },
+      clearTimeoutImpl: () => {},
+      onState: (next) => received.push(structuredClone(next)),
+    });
+    await sync.ready;
+    remoteState = {
+      ...remoteState,
+      items: [...remoteState.items, { id: "owner-new", key: "patata", name: "Patata", quantity: 1, checked: false }],
+    };
+    await timers.shift()();
+    sync.stop();
+
+    assert.equal(received.length, 2);
+    assert.equal(received.at(-1).items.at(-1).key, "patata");
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("una eliminación remota retira la lista especial local inmediatamente", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  let source = null;
+  class FakeEventSource {
+    constructor() {
+      this.listeners = {};
+      this.closed = false;
+      source = this;
+    }
+
+    addEventListener(type, callback) {
+      this.listeners[type] = callback;
+    }
+
+    close() {
+      this.closed = true;
+    }
+  }
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "invitado", displayName: "Invitado" }),
+        getIdToken: async () => "token-editor",
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      meta: { ownerId: "propietario" },
+      members: { invitado: { role: "editor" } },
+      state: { version: 2, items: [] },
+    }), { status: 200 });
+    const accountModule = await import(`./account-sharing.mjs?delete-stream=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    const statuses = [];
+    let deleted = 0;
+    const sync = accountModule.subscribeAccountList("especial", {
+      EventSourceImpl: FakeEventSource,
+      setTimeoutImpl: () => ({ unref() {} }),
+      clearTimeoutImpl: () => {},
+      onDeleted: () => { deleted += 1; },
+      onStatus: (status) => statuses.push(status),
+    });
+    await sync.ready;
+    source.listeners.put({ data: JSON.stringify({ path: "/", data: null }) });
+    assert.equal(deleted, 1);
+    assert.equal(source.closed, true);
+    assert.equal(statuses.at(-1), "removed");
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("quitar el acceso a una persona retira su copia al cancelar Firebase el canal", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  let source = null;
+  let allowed = true;
+  class FakeEventSource {
+    constructor() {
+      this.listeners = {};
+      source = this;
+    }
+
+    addEventListener(type, callback) {
+      this.listeners[type] = callback;
+    }
+
+    close() {}
+  }
+  try {
+    globalThis.LaCompraNative = {
+      accountAuth: {
+        available: true,
+        getCurrentUser: async () => ({ uid: "invitado", displayName: "Invitado" }),
+        getIdToken: async () => "token-editor",
+        onChange: async () => {},
+      },
+    };
+    globalThis.fetch = async () => allowed
+      ? new Response(JSON.stringify({
+        meta: { ownerId: "propietario" },
+        members: { invitado: { role: "editor" } },
+        state: { version: 2, items: [] },
+      }), { status: 200 })
+      : new Response("Permission denied", { status: 403 });
+    const accountModule = await import(`./account-sharing.mjs?revoke-stream=${Date.now()}`);
+    await accountModule.initializeAccountAuth();
+    let resolveDeleted;
+    const deleted = new Promise((resolve) => { resolveDeleted = resolve; });
+    const sync = accountModule.subscribeAccountList("especial", {
+      EventSourceImpl: FakeEventSource,
+      setTimeoutImpl: () => ({ unref() {} }),
+      clearTimeoutImpl: () => {},
+      onDeleted: resolveDeleted,
+    });
+    await sync.ready;
+    allowed = false;
+    source.listeners.cancel();
+    await deleted;
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("salir o eliminar una lista actualiza miembros e índices en una sola operación", async () => {
+  const previousNative = globalThis.LaCompraNative;
+  const previousFetch = globalThis.fetch;
+  try {
+    const run = async ({ uid, role, members, action, query }) => {
+      const requests = [];
+      globalThis.LaCompraNative = {
+        accountAuth: {
+          available: true,
+          getCurrentUser: async () => ({ uid, displayName: uid }),
+          getIdToken: async () => "token",
+          onChange: async () => {},
+        },
+      };
+      globalThis.fetch = async (url, options = {}) => {
+        requests.push({ url: String(url), method: options.method || "GET", body: options.body });
+        if ((options.method || "GET") === "GET") {
+          return new Response(JSON.stringify({
+            meta: { ownerId: "propietario" },
+            members,
+            state: { version: 2, items: [] },
+          }), { status: 200 });
+        }
+        return new Response("{}", { status: 200 });
+      };
+      const accountModule = await import(`./account-sharing.mjs?${query}=${Date.now()}`);
+      await accountModule.initializeAccountAuth();
+      await accountModule[action]("lista");
+      const patchRequest = requests.find((request) => request.method === "PATCH");
+      assert.ok(patchRequest);
+      assert.match(new URL(patchRequest.url).pathname, /\/\.json$/u);
+      return JSON.parse(patchRequest.body);
+    };
+
+    const leaveBody = await run({
+      uid: "invitado",
+      role: "editor",
+      members: { propietario: { role: "owner" }, invitado: { role: "editor" } },
+      action: "leaveAccountList",
+      query: "atomic-leave",
+    });
+    assert.equal(leaveBody["lists/lista/members/invitado"], null);
+    assert.equal(leaveBody["userLists/invitado/lista"], null);
+
+    const deleteBody = await run({
+      uid: "propietario",
+      role: "owner",
+      members: { propietario: { role: "owner" }, invitado: { role: "editor" } },
+      action: "deleteAccountList",
+      query: "atomic-delete",
+    });
+    assert.equal(deleteBody["lists/lista"], null);
+    assert.equal(deleteBody["userLists/propietario/lista"], null);
+    assert.equal(deleteBody["userLists/invitado/lista"], null);
+  } finally {
+    globalThis.LaCompraNative = previousNative;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("identifica el proveedor que debe revalidarse al eliminar una cuenta", () => {
+  assert.equal(accountProviderForDeletion({ providerId: "apple.com" }), "apple.com");
+  assert.equal(accountProviderForDeletion({ providerData: [{ providerId: "google.com" }] }), "google.com");
+  assert.equal(accountProviderForDeletion({
+    providerId: "firebase",
+    providerData: [{ providerId: "password" }, { providerId: "apple.com" }],
+  }), "apple.com");
+  assert.equal(accountProviderForDeletion({ providerId: "password" }), "");
+});
+
+test("sincroniza la lista familiar sin mezclar listas especiales", () => {
+  const local = createInitialState();
+  local.items.push({ id: "1", name: "Tomate" });
+  local.specialLists.push({ id: "navidad", name: "Navidad", items: [{ id: "2", name: "Turrón" }] });
+  const cloud = accountStateFrom(local);
+  assert.equal("specialLists" in cloud, false);
+  assert.equal(cloud.items[0].name, "Tomate");
+
+  const merged = mergeAccountState({ ...cloud, items: [{ id: "3", name: "Leche" }] }, local);
+  assert.equal(merged.items[0].name, "Leche");
+  assert.equal(merged.specialLists[0].name, "Navidad");
+});
+
+test("conserva la identidad mínima de Google o Apple", () => {
+  assert.deepEqual(normalizeAccountUser({
+    uid: "u1",
+    displayName: "Carlos Garau",
+    email: "carlos@example.com",
+    photoUrl: "https://example.com/carlos.jpg",
+    providerId: "google.com",
+  }), {
+    uid: "u1",
+    displayName: "Carlos Garau",
+    email: "carlos@example.com",
+    photoURL: "https://example.com/carlos.jpg",
+    providerId: "google.com",
+  });
+});
+
+test("la actualización no recarga la app mientras se usa", async () => {
+  const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
+  assert.equal(worker.includes("client.navigate("), false);
+  assert.match(worker, /self\.clients\.claim\(\)/u);
+});
+
+test("el acceso web conserva la sesión en iPhone sin redirección completa", async () => {
+  const accountSharing = await readFile(new URL("./account-sharing.mjs", import.meta.url), "utf8");
+  assert.match(accountSharing, /signInWithPopup\(webAuth, authProvider\)/u);
+  assert.equal(accountSharing.includes("signInWithRedirect(webAuth, authProvider)"), false);
+});
+
+test("la bienvenida ofrece sincronización entre dispositivos sin bloquear el uso local", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  assert.match(app, /Llévate tu lista a cualquier dispositivo/u);
+  assert.match(app, /maybeOpenAccountWelcome\(\)/u);
+  assert.match(html, /Seguir sin cuenta/u);
+});
+
+test("la actualización reinicia una sola vez la sesión de prueba y vuelve a pedir acceso", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  assert.match(app, /ACCOUNT_SESSION_RESET_KEY = "que-te-falta-account-session-reset-v29"/u);
+  assert.match(app, /if \(user\) await signOutAccount\(\)/u);
+  assert.match(app, /state = createInitialState\(\)/u);
+  assert.match(app, /openAccountDialog\("welcome"\)/u);
+});
+
+test("cerrar sesión olvida la bienvenida pero conserva el flujo de acceso", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const start = app.indexOf("async function handleAccountSignOut()");
+  const end = app.indexOf("async function handleDeleteAccount()", start);
+  const handler = app.slice(start, end);
+  assert.match(handler, /forgetAccountWelcomeSeen\(\)/u);
+  assert.match(handler, /openAccountDialog\("welcome"\)/u);
+  assert.equal(handler.includes("localStorage.clear()"), false);
+});
+
+test("la interfaz móvil bloquea el desplazamiento lateral involuntario", async () => {
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  assert.match(styles, /overflow-x: clip/u);
+  assert.match(styles, /overscroll-behavior-x: none/u);
+  assert.match(styles, /min-width: 0/u);
+  assert.match(styles, /\.list-selector-row \{ align-items: center; flex-wrap: nowrap;/u);
+  assert.match(styles, /\.list-switcher \{ flex: 1 1 auto; flex-wrap: wrap; overflow-x: visible;/u);
+});
+
+test("los campos de iPhone no activan el zoom automático al escribir", async () => {
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  assert.match(styles, /-webkit-text-size-adjust: 100%/u);
+  assert.match(styles, /\.quick-add input[^}]*font-size: 16px/u);
+  assert.match(styles, /input:not\(\[type="checkbox"\]\):not\(\[type="file"\]\) \{ font-size: 16px; \}/u);
+  assert.match(app, /function finishQuickAddInput\(input\)[\s\S]*input\.blur\(\)[\s\S]*window\.scrollTo\(\{ top: 0, left: 0/u);
+  assert.match(app, /input\.value = "";\s*finishQuickAddInput\(input\);/u);
+  assert.doesNotMatch(app, /input\.value = "";\s*input\.focus\(\);/u);
+});
+
+test("la versión web renueva la caché con la actualización", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const worker = await readFile(new URL("./service-worker.js", import.meta.url), "utf8");
+  assert.match(index, /styles\.css\?v=49/u);
+  assert.match(index, /app\.mjs\?v=49/u);
+  assert.match(app, /service-worker\.js\?v=49/u);
+  assert.match(worker, /que-te-falta-v49/u);
+  assert.match(worker, /fonts\/Lora-Variable\.ttf/u);
+  assert.doesNotMatch(`${index}\n${app}\n${worker}`, /\?v=48/u);
+});
+
+test("guardar una compra extra persiste su historial y caducidad sin errores", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const start = app.indexOf("function saveExtraPurchase(");
+  const end = app.indexOf("function saveManualExpiration(", start);
+  const handler = app.slice(start, end);
+  assert.match(handler, /registerPurchase\(state, entry, now\)[\s\S]*addExpiration\(state, entry, expiresOn, now\)[\s\S]*persistList\("main"\)/u);
+  assert.doesNotMatch(handler, /persistList\(listId\)/u);
+  assert.match(app, /Las listas de las que seas propietario también se eliminarán para todos sus miembros/u);
+  assert.doesNotMatch(app, /También se eliminarán para todos las listas/u);
+});
+
+test("los repetidos se guardan en la lista activa y los borrados explican su alcance", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const privacy = await readFile(new URL("./privacy.html", import.meta.url), "utf8");
+  const support = await readFile(new URL("./support.html", import.meta.url), "utf8");
+  const duplicateStart = app.indexOf("function resolveDuplicate(");
+  const duplicateEnd = app.indexOf("function enterShoppingMode(", duplicateStart);
+  const duplicateHandler = app.slice(duplicateStart, duplicateEnd);
+  assert.match(duplicateHandler, /persistList\(listId\)/u);
+  assert.doesNotMatch(duplicateHandler, /saveState\(\)/u);
+  assert.match(index, /Borrar lista e historial/u);
+  assert.match(app, /Las listas especiales, caducidades y preferencias se conservarán/u);
+  assert.match(privacy, /En la lista habitual,[\s\S]*Para dejar de compartir una lista especial/u);
+  assert.match(support, /En la lista habitual,[\s\S]*En una lista especial/u);
+  assert.match(app, /¿Salir de la lista “\$\{list\.name\}”\?/u);
+  assert.match(app, /Has salido de \$\{list\.name\}/u);
+});
+
+test("los avisos de caducidad no adivinan género ni mezclan interlocutores", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  assert.match(index, /RESUMEN DE COMPRA/u);
+  assert.match(index, /Sí, ya no queda/u);
+  assert.match(app, /¿Ya has consumido este producto\?/u);
+  assert.match(app, /Confírmalo para dejar de recibir estos avisos/u);
+  assert.doesNotMatch(`${index}\n${app}`, /TODO COMPRADO|eatenPronoun|Ya consumido|ya está consumido|avisaros|habéis consumido/u);
+});
+
+test("la versión Android usa identidad propia y textos coherentes con el sistema", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const privacy = await readFile(new URL("./privacy.html", import.meta.url), "utf8");
+  const support = await readFile(new URL("./support.html", import.meta.url), "utf8");
+  const adaptive = await readFile(new URL("./android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml", import.meta.url), "utf8");
+  const foreground = await readFile(new URL("./android/app/src/main/res/drawable/ic_launcher_foreground.xml", import.meta.url), "utf8");
+  const splash = await readFile(new URL("./android/app/src/main/res/drawable/splash.xml", import.meta.url), "utf8");
+  const resources = await readdir(new URL("./android/app/src/main/res", import.meta.url), { recursive: true });
+
+  assert.match(index, /class="provider-icon"[\s\S]*#4285f4[\s\S]*Continuar con Google/u);
+  assert.match(index, /provider-button apple[\s\S]*<svg[\s\S]*Continuar con Apple/u);
+  assert.doesNotMatch(`${index}\n${app}`, /Invitar por WhatsApp|Hacer o elegir foto/u);
+  assert.match(privacy, /servicios de voz del sistema operativo/u);
+  assert.match(privacy, /Apple o Google/u);
+  assert.doesNotMatch(privacy, /hoja de compartir de iOS/u);
+  assert.match(support, /Ajustes → Lista familiar compartida/u);
+  assert.match(support, /Ajustes → Datos y privacidad/u);
+  assert.match(adaptive, /@drawable\/ic_launcher_foreground/u);
+  assert.match(foreground, /#F7F4EC/u);
+  assert.match(foreground, /#D9EB9E/u);
+  assert.match(foreground, /M142,86 L292,86 L374,168/u);
+  assert.doesNotMatch(foreground, /M136,207|M373,87/u);
+  assert.match(splash, /@drawable\/splash_mark/u);
+  assert.equal(resources.some((path) => /ic_launcher_foreground\.png$/u.test(path)), false);
+  assert.equal(resources.some((path) => /(?:^|[\\/])splash\.png$/u.test(path)), false);
+});
+
+test("los ajustes esconden las acciones sensibles y mantienen enlaces táctiles", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const capture = await readFile(new URL("./scripts/capture-household.mjs", import.meta.url), "utf8");
+  assert.match(index, /<details class="settings-danger-details" id="settingsDangerDetails">[\s\S]*<summary>Datos y privacidad<\/summary>/u);
+  assert.match(styles, /\.legal-links a \{[^}]*min-height: 44px/u);
+  assert.match(capture, /button, a\[href\], summary/u);
+  assert.match(capture, /partialInitialActions/u);
+  assert.match(index, /<button class="import-button" id="importButton"/u);
+  assert.match(index, /id="importInput"[^>]*hidden/u);
+  assert.match(app, /settingsDangerDetails[\s\S]*privacy-focused[\s\S]*focusPrivacySettings[\s\S]*requestAnimationFrame[\s\S]*setTimeout\(focusPrivacySettings/u);
+  assert.match(styles, /\.settings-body \{[^}]*overflow-anchor: none[^}]*padding-bottom: calc\(180px/u);
+  assert.match(styles, /\.settings-body\.privacy-focused > \.setting-row,[\s\S]*\.account-settings \{ display: none; \}/u);
+  assert.match(capture, /\[1440, 480, 390, 320\]/u);
+  assert.match(styles, /\.account-cancel \{[^}]*min-height: 48px[^}]*background: #f0f3e7/u);
+  assert.match(styles, /@media \(max-width: 360px\)[\s\S]*\.item-edit-row \{ grid-template-columns: 1fr; \}/u);
+});
+
+test("los estados de revisión no enseñan correos ficticios ni concordancias dudosas", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(app, /example\.invalid/u);
+  assert.match(app, /Se ha quitado «\$\{before\.name\}»/u);
+  assert.doesNotMatch(app, /\$\{before\.name\} quitado/u);
+  assert.doesNotMatch(app, /congelarlo/u);
+  assert.match(app, /congelar este producto hoy/u);
+  assert.match(app, /Cuenta familiar/u);
+  assert.doesNotMatch(app, /Cuenta de prueba/u);
+  assert.doesNotMatch(index, /para los dos/u);
+});
+
+test("las listas especiales distinguen salir de eliminar y conservan la sincronización si falla", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const sharing = await readFile(new URL("./account-sharing.mjs", import.meta.url), "utf8");
+  const start = app.indexOf("async function deleteSpecialList()");
+  const end = app.indexOf("async function shareLegacySpecialList()", start);
+  const deletion = app.slice(start, end);
+  const flushStart = app.indexOf("function flushAccountPrimarySync()");
+  const flushEnd = app.indexOf("function cleanListName(", flushStart);
+  const flush = app.slice(flushStart, flushEnd);
+  const specialStart = app.indexOf("async function initializeAccountSpecialMembership(");
+  const specialEnd = app.indexOf("async function initializeAccountDataInternal(", specialStart);
+  const special = app.slice(specialStart, specialEnd);
+  assert.match(app, /deleteButton\.textContent = isEditor \? "Salir" : "Eliminar"/u);
+  assert.match(deletion, /const sharedWithOthers = Boolean\(accountListId \|\| shareId\)/u);
+  assert.ok(deletion.indexOf("await deleteAccountList") < deletion.indexOf("sharedSyncEntry(list.id)?.sync.stop()"));
+  assert.match(index, /solo su propietario puede quitar accesos/u);
+  assert.doesNotMatch(flush, /getAccountList\(/u);
+  assert.match(flush, /observeAccountState\(listId, accountStateFrom\(base\)\)[\s\S]*updateAccountListState\(listId, local\)/u);
+  assert.ok(special.indexOf("Object.assign(local, snapshot)") < special.indexOf("observeAccountState(membership.id, remoteList.state)"));
+  assert.match(special, /onDeleted: \(\) => removeLocalAccountSpecialList/u);
+  assert.match(app, /pruneLocalAccountSpecialLists\(accountMemberships\)/u);
+  assert.match(sharing, /account-state-writer\.mjs\?v=49/u);
+});
+
+test("la interfaz conserva la identidad de nota de cocina compartida", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  assert.match(index, /NOTA DE COCINA · POR VOZ/u);
+  assert.match(index, /LA NOTA DE CASA/u);
+  assert.match(styles, /--paper-corner:/u);
+  assert.match(styles, /@font-face[\s\S]*font-family: "Lora App"[\s\S]*fonts\/Lora-Variable\.ttf/u);
+  assert.ok((await readFile(new URL("./fonts/Lora-Variable.ttf", import.meta.url))).byteLength > 100_000);
+  assert.match(styles, /\.category-group \{[^}]*border-left: 4px solid var\(--category-color\)/u);
+  assert.match(styles, /\.bottom-nav button\.active \{[^}]*box-shadow: inset 0 -3px 0 var\(--green\)/u);
+  assert.match(app, /document\.querySelector\("\.app-shell > main"\)\?\.scrollTo/u);
+});
+
+test("el editor de producto incluye una foto opcional y permisos claros en iPhone", async () => {
+  const index = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const infoPlist = await readFile(new URL("./ios/App/App/Info.plist", import.meta.url), "utf8");
+  const privacy = await readFile(new URL("./privacy.html", import.meta.url), "utf8");
+  assert.match(index, /id="itemEditDialog"/u);
+  assert.match(index, /id="itemEditPhotoInput" type="file" accept="image\/\*"/u);
+  assert.match(app, /async function compressProductPhoto\(file\)/u);
+  assert.match(app, /updateShoppingItem\(item,/u);
+  assert.match(infoPlist, /NSCameraUsageDescription/u);
+  assert.match(infoPlist, /NSPhotoLibraryUsageDescription/u);
+  assert.match(privacy, /Fotos de productos/u);
+});
+
+test("un corte del canal en tiempo real verifica Firebase antes de mostrar sin conexión", async () => {
+  const familySync = await readFile(new URL("./family-sync.mjs", import.meta.url), "utf8");
+  const accountSharing = await readFile(new URL("./account-sharing.mjs", import.meta.url), "utf8");
+  assert.match(familySync, /source\.onerror = \(\) => \{[\s\S]*readRemote\(\)[\s\S]*\.catch\(handleSyncError\)/u);
+  assert.match(accountSharing, /source\.onerror = \(\) => \{[\s\S]*refresh\(\)[\s\S]*\.catch\(\(\) => \{\}\)/u);
+
+  let online = true;
+  let source = null;
+  class FakeEventSource {
+    constructor() {
+      source = this;
+    }
+
+    addEventListener() {}
+    close() {}
+  }
+  const statuses = [];
+  const sync = createFamilySync({
+    databaseUrl: "https://example.test",
+    familyId: "s".repeat(43),
+    deviceId: "iphone",
+    fetchImpl: async () => online
+      ? { ok: true, status: 200, json: async () => ({ state: createInitialState(), updatedAt: 1 }) }
+      : { ok: false, status: 503, json: async () => null },
+    EventSourceImpl: FakeEventSource,
+    onStatus: (status) => statuses.push(status),
+  });
+  await sync.start(createInitialState());
+  source.onerror();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(statuses.at(-1), "synced");
+
+  online = false;
+  source.onerror();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(statuses.at(-1), "offline");
+  sync.stop();
+});
+
+test("la cabecera de voz móvil deja espacio a la lista", async () => {
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  assert.match(styles, /\.voice-card \{ grid-template-columns: minmax\(0, 1fr\) 58px; min-height: 150px;/u);
+  assert.match(styles, /\.voice-card h1 \{ margin: 4px 0; font-size: 24px;/u);
+  assert.match(styles, /\.voice-card p \{ max-width: 230px; font-size: 12px;/u);
+  assert.match(styles, /\.mic-button \{ width: 52px; height: 52px;/u);
+});
+
+test("ajustes respeta la zona visible del navegador móvil", async () => {
+  const app = await readFile(new URL("./app.mjs", import.meta.url), "utf8");
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  assert.match(app, /window\.visualViewport\?\.height/u);
+  assert.match(styles, /--visible-viewport-height/u);
+  assert.match(styles, /\.settings-sheet \{[^}]*grid-template-rows: auto auto minmax\(0, 1fr\)/u);
+  assert.match(styles, /\.settings-sheet\[open\] \{ display: grid; \}/u);
+  assert.match(styles, /\.settings-body \{[^}]*overflow-y: auto/u);
+  assert.match(styles, /\.sheet-heading \{[^}]*background: var\(--surface\)/u);
+  assert.match(styles, /\.expiration-card-actions button \{ min-height: 44px/u);
+  assert.match(styles, /\.icon-button \{[^}]*width: 44px; height: 44px/u);
+});
+

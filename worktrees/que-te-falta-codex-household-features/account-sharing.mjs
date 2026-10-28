@@ -1,0 +1,746 @@
+import { AccountStateWriter } from "./account-state-writer.mjs?v=49";
+
+const FIREBASE_WEB_VERSION = "11.10.0";
+const FIREBASE_CONFIG = Object.freeze({
+  apiKey: "AIzaSyA29DqSnfWX9ueuLC13B0sP8ln5j-5kVD4",
+  authDomain: "la-compra-familiar.firebaseapp.com",
+  databaseURL: "https://la-compra-familiar-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "la-compra-familiar",
+  storageBucket: "la-compra-familiar.firebasestorage.app",
+  messagingSenderId: "927654282506",
+  appId: "1:927654282506:web:e0edbad72f29bfcda066f3",
+});
+
+export const ACCOUNT_INVITE_PARAMETER = "invitacion";
+export const ACCOUNT_ACTIVE_LIST_PREFIX = "que-te-falta-active-list:";
+export const ACCOUNT_INVITE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+export const ACCOUNT_PRIMARY_LIST_FIELD = "activeFamilyListId";
+export const ACCOUNT_SYNC_POLL_INTERVAL_MS = 4_000;
+
+const NATIVE = globalThis.LaCompraNative || {};
+let firebaseModulesPromise = null;
+let webAuth = null;
+let accountUser = null;
+let unsubscribeAuth = null;
+
+function cleanText(value, max = 100) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
+}
+
+function encodePathPart(value) {
+  return encodeURIComponent(String(value || ""));
+}
+
+function randomId(byteLength = 24, cryptoImpl = globalThis.crypto) {
+  const bytes = new Uint8Array(byteLength);
+  cryptoImpl.getRandomValues(bytes);
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+export function normalizeAccountUser(user) {
+  if (!user?.uid) return null;
+  return {
+    uid: String(user.uid),
+    displayName: cleanText(user.displayName || user.name || user.email?.split("@")[0] || "Usuario", 80),
+    email: cleanText(user.email, 160),
+    photoURL: cleanText(user.photoURL || user.photoUrl, 500),
+    providerId: cleanText(user.providerId || user.providerData?.[0]?.providerId, 50),
+  };
+}
+
+export function accountProviderForDeletion(user) {
+  const providerIds = [
+    user?.providerId,
+    ...(Array.isArray(user?.providerData) ? user.providerData.map((entry) => entry?.providerId) : []),
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (providerIds.includes("apple")) return "apple.com";
+  if (providerIds.includes("google")) return "google.com";
+  return "";
+}
+
+async function loadFirebaseWeb() {
+  if (!firebaseModulesPromise) {
+    firebaseModulesPromise = Promise.all([
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_WEB_VERSION}/firebase-app.js`),
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_WEB_VERSION}/firebase-auth.js`),
+    ]).then(([appApi, authApi]) => ({ appApi, authApi }));
+  }
+  return firebaseModulesPromise;
+}
+
+async function initializeWebAuth(onChange) {
+  const { appApi, authApi } = await loadFirebaseWeb();
+  const app = appApi.getApps().length ? appApi.getApp() : appApi.initializeApp(FIREBASE_CONFIG);
+  webAuth = authApi.getAuth(app);
+  webAuth.languageCode = "es";
+  await authApi.setPersistence(webAuth, authApi.browserLocalPersistence);
+  unsubscribeAuth?.();
+  unsubscribeAuth = authApi.onAuthStateChanged(webAuth, (user) => {
+    accountUser = normalizeAccountUser(user);
+    onChange(accountUser);
+  });
+  const redirectResult = await authApi.getRedirectResult(webAuth).catch((error) => {
+    if (!String(error?.code || "").includes("no-auth-event")) throw error;
+    return null;
+  });
+  if (redirectResult?.user) {
+    accountUser = normalizeAccountUser(redirectResult.user);
+    onChange(accountUser);
+  }
+}
+
+async function initializeNativeAuth(onChange) {
+  const current = await NATIVE.accountAuth.getCurrentUser();
+  accountUser = normalizeAccountUser(current);
+  onChange(accountUser);
+  await NATIVE.accountAuth.onChange((user) => {
+    accountUser = normalizeAccountUser(user);
+    onChange(accountUser);
+  });
+}
+
+export async function initializeAccountAuth({ onChange = () => {} } = {}) {
+  if (NATIVE.accountAuth?.available) await initializeNativeAuth(onChange);
+  else await initializeWebAuth(onChange);
+  return accountUser;
+}
+
+export function getAccountUser() {
+  return accountUser;
+}
+
+export async function signInWithAccount(provider) {
+  if (!['google', 'apple'].includes(provider)) throw new Error("Proveedor de acceso no válido");
+  if (NATIVE.accountAuth?.available) {
+    const user = await NATIVE.accountAuth.signIn(provider);
+    accountUser = normalizeAccountUser(user);
+    return accountUser;
+  }
+
+  const { authApi } = await loadFirebaseWeb();
+  if (!webAuth) await initializeWebAuth(() => {});
+  const authProvider = provider === "google"
+    ? new authApi.GoogleAuthProvider()
+    : new authApi.OAuthProvider("apple.com");
+  if (provider === "apple") {
+    authProvider.addScope("email");
+    authProvider.addScope("name");
+    authProvider.setCustomParameters({ locale: "es" });
+  }
+  const result = await authApi.signInWithPopup(webAuth, authProvider);
+  accountUser = normalizeAccountUser(result.user);
+  return accountUser;
+}
+
+export async function signOutAccount() {
+  if (NATIVE.accountAuth?.available) await NATIVE.accountAuth.signOut();
+  else {
+    const { authApi } = await loadFirebaseWeb();
+    if (webAuth) await authApi.signOut(webAuth);
+  }
+  accountUser = null;
+}
+
+async function getIdToken(forceRefresh = false) {
+  if (NATIVE.accountAuth?.available) return NATIVE.accountAuth.getIdToken(forceRefresh);
+  if (!webAuth?.currentUser) throw new Error("Inicia sesión para continuar");
+  return webAuth.currentUser.getIdToken(forceRefresh);
+}
+
+export function makeAuthenticatedDatabaseUrl(path, token, databaseUrl = FIREBASE_CONFIG.databaseURL) {
+  const url = new URL(`${String(databaseUrl).replace(/\/+$/g, "")}/${path}.json`);
+  url.searchParams.set("auth", String(token || ""));
+  return url.toString();
+}
+
+async function authenticatedDatabaseResponse(path, { method = "GET", body, headers = {} } = {}, forceRefresh = false) {
+  const token = await getIdToken(forceRefresh);
+  return fetch(makeAuthenticatedDatabaseUrl(path, token), {
+    method,
+    headers: {
+      Accept: "application/json",
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...headers,
+    },
+    cache: "no-store",
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+
+function databaseError(response) {
+  const error = new Error(response.status === 401 || response.status === 403
+    ? "No tienes permiso para abrir esta lista"
+    : `No se puede sincronizar la lista (${response.status})`);
+  error.status = response.status;
+  return error;
+}
+
+async function databaseRequest(path, { withETag = false, allowConflict = false, ...options } = {}) {
+  let response = await authenticatedDatabaseResponse(path, options);
+  if (response.status === 401) response = await authenticatedDatabaseResponse(path, options, true);
+  if (allowConflict && response.status === 412) return false;
+  if (!response.ok) {
+    throw databaseError(response);
+  }
+  if (response.status === 204) return null;
+  const data = await response.json();
+  return withETag ? { state: data || {}, etag: response.headers.get("ETag") } : data;
+}
+
+const accountWriter = new AccountStateWriter({
+  read: (id) => databaseRequest(`lists/${encodePathPart(id)}/state`, { withETag: true, headers: { "X-Firebase-ETag": "true" } }),
+  write: (id, state, etag) => databaseRequest(`lists/${encodePathPart(id)}/state`, { method: "PUT", body: state, headers: { "if-match": etag }, allowConflict: true }),
+});
+
+export function accountInviteFromUrl(value) {
+  try {
+    return cleanText(new URL(value).searchParams.get(ACCOUNT_INVITE_PARAMETER), 80);
+  } catch {
+    return "";
+  }
+}
+
+export function clearAccountInviteFromUrl(value) {
+  const url = new URL(value);
+  url.searchParams.delete(ACCOUNT_INVITE_PARAMETER);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+export function makeAccountInviteUrl(baseUrl, inviteId) {
+  const url = new URL(baseUrl);
+  url.searchParams.set(ACCOUNT_INVITE_PARAMETER, cleanText(inviteId, 80));
+  return url.toString();
+}
+
+export function accountStateFrom(state) {
+  return {
+    version: 2,
+    items: Array.isArray(state?.items) ? state.items : [],
+    catalog: state?.catalog && typeof state.catalog === "object" ? state.catalog : {},
+    purchases: Array.isArray(state?.purchases) ? state.purchases : [],
+    activity: Array.isArray(state?.activity) ? state.activity : [],
+    expirations: Array.isArray(state?.expirations) ? state.expirations : [],
+    dismissedSuggestions: state?.dismissedSuggestions && typeof state.dismissedSuggestions === "object"
+      ? state.dismissedSuggestions
+      : {},
+  };
+}
+
+export function mergeAccountState(remote, local) {
+  const target = local && typeof local === "object" ? local : {};
+  return {
+    ...target,
+    ...accountStateFrom(remote),
+    specialLists: Array.isArray(target.specialLists) ? target.specialLists : [],
+    settings: target.settings || {},
+  };
+}
+
+function memberRecord(user, role = "editor", inviteId = "") {
+  return {
+    role,
+    displayName: user.displayName,
+    email: user.email,
+    photoURL: user.photoURL,
+    joinedAt: Date.now(),
+    ...(inviteId ? { inviteId } : {}),
+  };
+}
+
+function listIndexRecord({ id, name, type, role }) {
+  return { id, name: cleanText(name, 50), type, role, updatedAt: Date.now() };
+}
+
+export async function listAccountMemberships() {
+  if (!accountUser) return [];
+  const records = await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}`);
+  return Object.entries(records || {}).map(([id, record]) => ({ id, ...record }));
+}
+
+export async function removeOwnAccountListReference(listId) {
+  if (!accountUser) throw new Error("Inicia sesión para actualizar tus listas");
+  await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${encodePathPart(listId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function selectPrimaryFamilyAccountList(familyLists, {
+  preferredId = "",
+  profileId = "",
+  storedId = "",
+} = {}) {
+  const candidates = (Array.isArray(familyLists) ? familyLists : [])
+    .filter((entry) => entry?.id && entry.type === "family");
+  if (!candidates.length) return null;
+
+  const explicit = candidates.find((entry) => entry.id === preferredId);
+  if (explicit) return explicit;
+
+  const shared = candidates.filter((entry) => Number(entry.memberCount) > 1);
+  const pool = shared.length ? shared : candidates;
+  for (const id of [profileId, storedId]) {
+    const remembered = pool.find((entry) => entry.id === id);
+    if (remembered) return remembered;
+  }
+
+  return [...pool].sort((left, right) => (
+    (Number(right.memberCount) || 0) - (Number(left.memberCount) || 0)
+    || (Number(right.updatedAt) || 0) - (Number(left.updatedAt) || 0)
+    || String(left.id).localeCompare(String(right.id))
+  ))[0];
+}
+
+export async function listFamilyAccountLists(memberships = null) {
+  const records = Array.isArray(memberships) ? memberships : await listAccountMemberships();
+  const familyMemberships = records.filter((entry) => entry.type === "family" && entry.id);
+  const lists = await Promise.all(familyMemberships.map(async (membership) => {
+    let list;
+    try {
+      list = await getAccountList(membership.id);
+    } catch (error) {
+      if (![401, 403].includes(error?.status)) throw error;
+      await removeOwnAccountListReference(membership.id).catch(() => {});
+      return null;
+    }
+    if (!list) {
+      await removeOwnAccountListReference(membership.id).catch(() => {});
+      return null;
+    }
+    return {
+      ...membership,
+      name: list.meta?.name || membership.name || "Mi lista familiar",
+      role: list.members?.[accountUser?.uid]?.role || membership.role || "editor",
+      memberCount: Object.keys(list.members || {}).length,
+      createdAt: Number(list.meta?.createdAt) || 0,
+      updatedAt: Number(list.meta?.updatedAt) || Number(membership.updatedAt) || 0,
+      state: list.state || {},
+      list,
+    };
+  }));
+  return lists.filter(Boolean);
+}
+
+export async function createAccountList({ name, type = "family", state = {} }) {
+  if (!accountUser) throw new Error("Inicia sesión para compartir");
+  const id = randomId();
+  const now = Date.now();
+  const list = {
+    meta: {
+      id,
+      name: cleanText(name, 50) || (type === "special" ? "Lista compartida" : "Mi lista familiar"),
+      type,
+      ownerId: accountUser.uid,
+      createdAt: now,
+      updatedAt: now,
+    },
+    members: { [accountUser.uid]: memberRecord(accountUser, "owner") },
+    state,
+  };
+  await databaseRequest(`lists/${id}`, { method: "PUT", body: list });
+  try {
+    await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${id}`, {
+      method: "PUT",
+      body: listIndexRecord({ id, name: list.meta.name, type, role: "owner" }),
+    });
+  } catch (error) {
+    await databaseRequest(`lists/${id}`, { method: "DELETE" }).catch(() => {});
+    throw error;
+  }
+  return { id, ...list };
+}
+
+export async function ensureFamilyAccountList(localState, selection = {}) {
+  const options = typeof selection === "string" ? { storedId: selection } : (selection || {});
+  let memberships = await listAccountMemberships();
+  let familyLists = await listFamilyAccountLists(memberships);
+  let selected = selectPrimaryFamilyAccountList(familyLists, options);
+  if (!selected) {
+    const created = await createAccountList({
+      name: "Mi lista familiar",
+      type: "family",
+      state: accountStateFrom(localState),
+    });
+    memberships = await listAccountMemberships();
+    familyLists = await listFamilyAccountLists(memberships);
+    selected = familyLists.find((entry) => entry.id === created.id)
+      || {
+        id: created.id,
+        ...created.meta,
+        role: "owner",
+        memberCount: 1,
+        state: created.state || {},
+        list: created,
+      };
+  }
+  return { selected, memberships, familyLists };
+}
+
+export async function getAccountList(listId) {
+  return databaseRequest(`lists/${encodePathPart(listId)}`);
+}
+
+export function observeAccountState(listId, state) {
+  return accountWriter.observe(listId, state);
+}
+
+export function forgetAccountState(listId) {
+  accountWriter.forget(listId);
+}
+
+async function updateOwnedListMetadata(listId, state = {}) {
+  const list = await getAccountList(listId);
+  if (list?.meta?.ownerId !== accountUser?.uid) return;
+  if (state?.name) {
+    await databaseRequest(`lists/${encodePathPart(listId)}/meta/name`, {
+      method: "PUT",
+      body: cleanText(state.name, 50),
+    });
+  }
+  await databaseRequest(`lists/${encodePathPart(listId)}/meta/updatedAt`, {
+    method: "PUT",
+    body: Date.now(),
+  });
+}
+
+export async function updateAccountListState(listId, state) {
+  const saved = await accountWriter.update(listId, state);
+  // The state is the authoritative save. Metadata is cosmetic and only the
+  // owner may edit it, so it must never interrupt an editor's subscription.
+  await updateOwnedListMetadata(listId, state).catch(() => {});
+  return saved;
+}
+
+export async function mergeIntoAccountListState(listId, incomingState, mergeStates, maxAttempts = 5) {
+  if (typeof mergeStates !== "function") throw new Error("No se puede reunir la lista");
+  const path = `lists/${encodePathPart(listId)}/state`;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let response = await authenticatedDatabaseResponse(path, {
+      headers: { "X-Firebase-ETag": "true" },
+    });
+    if (response.status === 401) {
+      response = await authenticatedDatabaseResponse(path, {
+        headers: { "X-Firebase-ETag": "true" },
+      }, true);
+    }
+    if (!response.ok) throw databaseError(response);
+    const etag = response.headers.get("etag");
+    const remoteState = response.status === 204 ? {} : (await response.json() || {});
+    const mergedState = mergeStates(incomingState || {}, remoteState);
+    if (!etag) {
+      await updateAccountListState(listId, mergedState);
+      return mergedState;
+    }
+
+    let write = await authenticatedDatabaseResponse(path, {
+      method: "PUT",
+      headers: { "if-match": etag },
+      body: mergedState,
+    });
+    if (write.status === 401) {
+      write = await authenticatedDatabaseResponse(path, {
+        method: "PUT",
+        headers: { "if-match": etag },
+        body: mergedState,
+      }, true);
+    }
+    if (write.status === 412) continue;
+    if (!write.ok) throw databaseError(write);
+    await updateOwnedListMetadata(listId, mergedState).catch(() => {});
+    return mergedState;
+  }
+  throw new Error("La lista ha cambiado varias veces. Vuelve a intentarlo en unos segundos");
+}
+
+export function subscribeAccountList(listId, {
+  onState = () => {},
+  onStatus = () => {},
+  onDeleted = () => {},
+  EventSourceImpl = globalThis.EventSource,
+  setTimeoutImpl = globalThis.setTimeout,
+  clearTimeoutImpl = globalThis.clearTimeout,
+  pollIntervalMs = ACCOUNT_SYNC_POLL_INTERVAL_MS,
+} = {}) {
+  let source = null;
+  let stopped = false;
+  let refreshTimer = null;
+  let reconnectTimer = null;
+  let pollTimer = null;
+  let streamHealthCheck = null;
+  let refreshInFlight = null;
+
+  const stop = () => {
+    stopped = true;
+    clearTimeoutImpl?.(refreshTimer);
+    clearTimeoutImpl?.(reconnectTimer);
+    clearTimeoutImpl?.(pollTimer);
+    source?.close();
+    source = null;
+  };
+
+  const handleDeleted = () => {
+    if (stopped) return;
+    accountWriter.forget(listId);
+    try {
+      onDeleted();
+    } finally {
+      onStatus("removed");
+      stop();
+    }
+  };
+
+  const refresh = () => {
+    if (refreshInFlight) return refreshInFlight;
+    refreshInFlight = (async () => {
+      try {
+        const list = await getAccountList(listId);
+        if (!list) {
+          handleDeleted();
+          return null;
+        }
+        if (list?.state && accountWriter.observe(listId, list.state)) onState(list.state, list);
+        onStatus("synced");
+        return list;
+      } catch (error) {
+        if ([401, 403].includes(error?.status)) handleDeleted();
+        else onStatus("offline");
+        throw error;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+    return refreshInFlight;
+  };
+
+  const schedulePoll = (delay = pollIntervalMs) => {
+    if (stopped || !setTimeoutImpl || !(pollIntervalMs > 0)) return;
+    clearTimeoutImpl?.(pollTimer);
+    pollTimer = setTimeoutImpl(async () => {
+      pollTimer = null;
+      const visible = !globalThis.document || globalThis.document.visibilityState !== "hidden";
+      if (visible) {
+        await refresh().catch(() => {});
+        if (!source) await connect().catch(() => scheduleReconnect(true, 5_000));
+      }
+      schedulePoll();
+    }, delay);
+    pollTimer?.unref?.();
+  };
+
+  const scheduleReconnect = (forceRefresh = false, delay = 1_500) => {
+    if (stopped || !EventSourceImpl || !setTimeoutImpl) return;
+    clearTimeoutImpl?.(reconnectTimer);
+    reconnectTimer = setTimeoutImpl(() => {
+      reconnectTimer = null;
+      connect(forceRefresh).catch(() => scheduleReconnect(true, 5_000));
+    }, delay);
+    reconnectTimer?.unref?.();
+  };
+
+  const connect = async (forceRefresh = false) => {
+    if (stopped || !EventSourceImpl) return;
+    source?.close();
+    const token = await getIdToken(forceRefresh);
+    const url = `${FIREBASE_CONFIG.databaseURL}/lists/${encodePathPart(listId)}.json?auth=${encodeURIComponent(token)}`;
+    source = new EventSourceImpl(url);
+    source.addEventListener("put", (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.path === "/" && message.data === null) {
+          handleDeleted();
+          return;
+        }
+        const list = message.path === "/" ? message.data : null;
+        if (list?.state && accountWriter.observe(listId, list.state)) onState(list.state, list);
+        else refresh().catch(() => {});
+      } catch {
+        refresh().catch(() => {});
+      }
+    });
+    source.addEventListener("patch", () => refresh().catch(() => {}));
+    source.addEventListener("open", () => onStatus("synced"));
+    source.addEventListener("cancel", () => {
+      refresh().catch(() => {
+        if (!stopped) scheduleReconnect(false);
+      });
+    });
+    source.addEventListener("auth_revoked", () => scheduleReconnect(true));
+    source.onerror = () => {
+      if (streamHealthCheck) return;
+      streamHealthCheck = refresh()
+        .catch(() => {})
+        .finally(() => {
+          streamHealthCheck = null;
+          scheduleReconnect(false);
+        });
+    };
+    clearTimeoutImpl?.(refreshTimer);
+    refreshTimer = setTimeoutImpl?.(() => connect(true).catch(() => scheduleReconnect(true)), 50 * 60 * 1000);
+    refreshTimer?.unref?.();
+  };
+
+  const ready = refresh().then(async (list) => {
+    await connect();
+    return list;
+  });
+  ready.catch(() => {});
+  // Start the fallback independently of the initial request. If iOS opens the
+  // app during a brief network outage, the shared list reconnects by itself.
+  schedulePoll();
+  return {
+    ready,
+    refresh,
+    stop,
+  };
+}
+
+export async function createListInvite(listId) {
+  if (!accountUser) throw new Error("Inicia sesión para compartir");
+  const list = await getAccountList(listId);
+  if (list?.members?.[accountUser.uid]?.role !== "owner") throw new Error("Solo el propietario puede invitar");
+  const id = randomId(30);
+  const invite = {
+    id,
+    listId,
+    listName: cleanText(list.meta?.name, 50),
+    listType: list.meta?.type === "special" ? "special" : "family",
+    role: "editor",
+    createdBy: accountUser.uid,
+    createdByName: accountUser.displayName,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + ACCOUNT_INVITE_MAX_AGE,
+  };
+  await databaseRequest(`invites/${id}`, { method: "PUT", body: invite });
+  return invite;
+}
+
+export async function getListInvite(inviteId) {
+  const invite = await databaseRequest(`invites/${encodePathPart(inviteId)}`);
+  if (!invite || Number(invite.expiresAt) < Date.now()) throw new Error("Esta invitación ha caducado");
+  return invite;
+}
+
+export async function acceptListInvite(inviteId) {
+  if (!accountUser) throw new Error("Inicia sesión para aceptar la invitación");
+  const invite = await getListInvite(inviteId);
+  const member = memberRecord(accountUser, "editor", inviteId);
+  await databaseRequest(`lists/${encodePathPart(invite.listId)}/members/${encodePathPart(accountUser.uid)}`, {
+    method: "PUT",
+    body: member,
+  });
+  try {
+    await databaseRequest(`userLists/${encodePathPart(accountUser.uid)}/${encodePathPart(invite.listId)}`, {
+      method: "PUT",
+      body: listIndexRecord({
+        id: invite.listId,
+        name: invite.listName,
+        type: invite.listType,
+        role: "editor",
+      }),
+    });
+  } catch (error) {
+    await databaseRequest(`lists/${encodePathPart(invite.listId)}/members/${encodePathPart(accountUser.uid)}`, {
+      method: "DELETE",
+    }).catch(() => {});
+    throw error;
+  }
+  return invite;
+}
+
+export async function getListMembers(listId) {
+  const members = await databaseRequest(`lists/${encodePathPart(listId)}/members`);
+  return Object.entries(members || {}).map(([uid, member]) => ({ uid, ...member }));
+}
+
+export async function removeListMember(listId, uid) {
+  const list = await getAccountList(listId);
+  if (list?.members?.[accountUser?.uid]?.role !== "owner") throw new Error("Solo el propietario puede quitar personas");
+  if (uid === accountUser.uid) throw new Error("El propietario no puede eliminarse");
+  await databaseRequest("", {
+    method: "PATCH",
+    body: {
+      [`lists/${encodePathPart(listId)}/members/${encodePathPart(uid)}`]: null,
+      [`userLists/${encodePathPart(uid)}/${encodePathPart(listId)}`]: null,
+    },
+  });
+}
+
+export async function deleteAccountList(listId) {
+  const list = await getAccountList(listId);
+  if (list?.members?.[accountUser?.uid]?.role !== "owner") throw new Error("Solo el propietario puede eliminar esta lista");
+  const removals = { [`lists/${encodePathPart(listId)}`]: null };
+  Object.keys(list.members || {}).forEach((uid) => {
+    removals[`userLists/${encodePathPart(uid)}/${encodePathPart(listId)}`] = null;
+  });
+  await databaseRequest("", { method: "PATCH", body: removals });
+  accountWriter.forget(listId);
+}
+
+export async function leaveAccountList(listId) {
+  if (!accountUser) throw new Error("Inicia sesión para salir de esta lista");
+  const list = await getAccountList(listId);
+  if (list?.members?.[accountUser.uid]?.role === "owner") throw new Error("El propietario debe eliminar la lista o transferirla");
+  await databaseRequest("", {
+    method: "PATCH",
+    body: {
+      [`lists/${encodePathPart(listId)}/members/${encodePathPart(accountUser.uid)}`]: null,
+      [`userLists/${encodePathPart(accountUser.uid)}/${encodePathPart(listId)}`]: null,
+    },
+  });
+  accountWriter.forget(listId);
+}
+
+export async function deleteAccountAndData() {
+  if (!accountUser) return;
+  const uid = accountUser.uid;
+  const providerId = accountProviderForDeletion(accountUser);
+  if (NATIVE.accountAuth?.available) {
+    await NATIVE.accountAuth.prepareDeletion(providerId);
+  } else if (webAuth?.currentUser && providerId) {
+    const { authApi } = await loadFirebaseWeb();
+    const provider = providerId === "apple.com"
+      ? new authApi.OAuthProvider("apple.com")
+      : new authApi.GoogleAuthProvider();
+    await authApi.reauthenticateWithPopup(webAuth.currentUser, provider);
+  }
+  const memberships = await listAccountMemberships();
+  for (const membership of memberships) {
+    const list = await getAccountList(membership.id);
+    if (!list) {
+      await databaseRequest(`userLists/${encodePathPart(uid)}/${encodePathPart(membership.id)}`, { method: "DELETE" });
+      continue;
+    }
+    if (list.meta?.ownerId === uid) {
+      await deleteAccountList(membership.id);
+    } else {
+      await leaveAccountList(membership.id);
+    }
+  }
+  await databaseRequest(`userProfiles/${encodePathPart(uid)}`, { method: "DELETE" });
+  if (NATIVE.accountAuth?.available) await NATIVE.accountAuth.deleteUser();
+  else {
+    const { authApi } = await loadFirebaseWeb();
+    if (webAuth?.currentUser) await authApi.deleteUser(webAuth.currentUser);
+  }
+  accountUser = null;
+}
+
+export async function getAccountProfile() {
+  if (!accountUser) return null;
+  return databaseRequest(`userProfiles/${encodePathPart(accountUser.uid)}`);
+}
+
+export async function saveAccountProfile(fields = {}) {
+  if (!accountUser) return;
+  await databaseRequest(`userProfiles/${encodePathPart(accountUser.uid)}`, {
+    method: "PATCH",
+    body: { ...accountUser, ...fields, updatedAt: Date.now() },
+  });
+}
+
+export async function savePrimaryFamilyListId(listId) {
+  if (!accountUser) return;
+  await saveAccountProfile({ [ACCOUNT_PRIMARY_LIST_FIELD]: cleanText(listId, 80) });
+}
+

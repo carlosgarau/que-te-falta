@@ -28,14 +28,6 @@ export const CATEGORY_META = {
   Otros: { icon: "basket", color: "#706c65" },
 };
 
-export const MAX_PRODUCT_PHOTO_DATA_URL_LENGTH = 100_000;
-
-export function sanitizeProductPhoto(value) {
-  const candidate = typeof value === "string" ? value.trim() : "";
-  if (!candidate || candidate.length > MAX_PRODUCT_PHOTO_DATA_URL_LENGTH) return "";
-  return /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/u.test(candidate) ? candidate : "";
-}
-
 export const PERISHABLE_CATEGORIES = new Set([
   "Fruta y verdura",
   "Carne y pescado",
@@ -360,17 +352,10 @@ export function createInitialState() {
 export function hydrateState(raw) {
   const initial = createInitialState();
   if (!raw || typeof raw !== "object") return initial;
-  const hydrateItem = (item) => {
-    if (!item || typeof item !== "object") return null;
-    const { photoDataUrl: rawPhoto, ...rest } = item;
-    const photoDataUrl = sanitizeProductPhoto(rawPhoto);
-    return photoDataUrl ? { ...rest, photoDataUrl } : rest;
-  };
-  const hydrateItems = (items) => (Array.isArray(items) ? items.map(hydrateItem).filter(Boolean) : []);
   return {
     ...initial,
     ...raw,
-    items: hydrateItems(raw.items),
+    items: Array.isArray(raw.items) ? raw.items : [],
     catalog: raw.catalog && typeof raw.catalog === "object" ? raw.catalog : {},
     purchases: Array.isArray(raw.purchases) ? raw.purchases : [],
     expirations: Array.isArray(raw.expirations) ? raw.expirations : [],
@@ -382,7 +367,7 @@ export function hydrateState(raw) {
         accountListId: String(list.accountListId || ""),
         accountRole: list.accountRole === "owner" ? "owner" : list.accountRole ? "editor" : "",
         createdAt: list.createdAt || new Date().toISOString(),
-        items: hydrateItems(list.items),
+        items: Array.isArray(list.items) ? list.items : [],
       })).filter((list) => list.id)
       : [],
     dismissedSuggestions: raw.dismissedSuggestions && typeof raw.dismissedSuggestions === "object"
@@ -399,34 +384,6 @@ export function makeItem(entry, now = Date.now()) {
     addedAt: new Date(now).toISOString(),
     checked: false,
   };
-}
-
-export function updateShoppingItem(item, changes = {}, now = Date.now()) {
-  if (!item || typeof item !== "object") return null;
-  const parsed = parseEntry(changes.name ?? item.name);
-  if (!parsed.key) throw new Error("Escribe el nombre del producto");
-  const requestedQuantity = Number(changes.quantity ?? item.quantity);
-  const quantity = Number.isFinite(requestedQuantity)
-    ? Math.min(99, Math.max(1, Math.round(requestedQuantity)))
-    : 1;
-  const requestedCategory = changes.category ?? item.category;
-  const category = Object.prototype.hasOwnProperty.call(CATEGORY_META, requestedCategory)
-    ? requestedCategory
-    : parsed.category;
-  const photoDataUrl = sanitizeProductPhoto(
-    Object.prototype.hasOwnProperty.call(changes, "photoDataUrl") ? changes.photoDataUrl : item.photoDataUrl,
-  );
-
-  Object.assign(item, {
-    key: parsed.key,
-    name: parsed.name,
-    category,
-    quantity,
-    updatedAt: new Date(now).toISOString(),
-  });
-  if (photoDataUrl) item.photoDataUrl = photoDataUrl;
-  else delete item.photoDataUrl;
-  return item;
 }
 
 export function registerRequest(state, entry, now = Date.now()) {

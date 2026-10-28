@@ -1,6 +1,5 @@
 import UIKit
 import Capacitor
-import AppIntents
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,7 +7,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        if #available(iOS 16.0, *) { ShoppingShortcuts.updateAppShortcutParameters() }
+        // Override point for customization after application launch.
         return true
     }
 

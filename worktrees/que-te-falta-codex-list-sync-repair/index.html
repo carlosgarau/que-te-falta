@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7f4ec" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="¿Qué te falta?" />
+    <meta name="description" content="Tu lista familiar, con voz, memoria y sugerencias útiles." />
+    <link rel="manifest" href="manifest.webmanifest?v=34" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="stylesheet" href="styles.css?v=34" />
+    <title>¿Qué te falta?</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <button class="brand" type="button" data-nav="list" aria-label="Ir a la lista">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path d="M14 19h20l-2 19H16l-2-19Z"/><path d="M19 21c0-8 10-8 10 0"/></svg>
+          </span>
+          <span><strong>¿Qué te falta?</strong><small id="headerSummary">Tu lista familiar</small></span>
+        </button>
+        <div class="topbar-actions">
+          <span class="family-badge connecting" id="familyBadge" hidden>Conectando</span>
+          <button class="icon-button" id="settingsButton" type="button" aria-label="Ajustes">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06-.06A1.7 1.7 0 0 0 19.4 9c.13.36.34.7.6 1 .29.3.68.47 1.1.48h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="view active" id="listView" data-view="list">
+          <div class="voice-card" id="voiceCard">
+            <div class="voice-copy">
+              <span class="eyebrow">DÍMELO</span>
+              <h1 id="voiceTitle">¿Qué hace falta?</h1>
+              <p id="voiceHint">Toca el micrófono y di “leche, pan y dos kilos de patatas”.</p>
+              <div class="live-transcript" id="liveTranscript" aria-live="polite"></div>
+            </div>
+            <button class="mic-button" id="micButton" type="button" aria-label="Hablar">
+              <span class="mic-ripple"></span>
+              <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="11" y="4" width="10" height="16" rx="5"/><path d="M7 15a9 9 0 0 0 18 0M16 24v5M11 29h10"/></svg>
+            </button>
+          </div>
+
+          <div class="list-selector-row" id="listSelectorRow">
+            <div class="list-switcher" id="listSwitcher" aria-label="Cambiar de lista"></div>
+            <button class="list-create-button" id="specialListCreate" type="button">+ Nueva lista</button>
+          </div>
+
+          <div class="special-list-actions" id="specialListActions" hidden>
+            <span>Esta lista no afecta a tu lista habitual.</span>
+            <div>
+              <button id="specialListRename" type="button">Renombrar</button>
+              <button class="share" id="specialListShare" type="button">Compartir lista</button>
+              <button class="delete" id="specialListDelete" type="button" aria-label="Eliminar lista">Eliminar</button>
+            </div>
+          </div>
+
+          <form class="quick-add" id="addForm">
+            <label class="sr-only" for="itemInput">Añadir productos</label>
+            <input id="itemInput" autocomplete="off" enterkeyhint="done" placeholder="Escribe un producto…" />
+            <button type="submit">Añadir</button>
+          </form>
+
+          <section class="list-section">
+            <div class="section-heading">
+              <div>
+                <span class="eyebrow">AHORA</span>
+                <h2><span id="listTitle">Lista habitual</span> <span class="count-badge" id="itemCount">0</span></h2>
+              </div>
+              <button class="shopping-start" id="shoppingStart" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 2 2 3-3M11 6h9M4 12l2 2 3-3M11 13h9M4 19l2 2 3-3M11 20h9"/></svg>
+                Voy a comprar
+              </button>
+            </div>
+            <div id="listContent"></div>
+          </section>
+        </section>
+
+        <section class="view" id="expirationView" data-view="expiration">
+          <div class="page-intro">
+            <span class="eyebrow">DESPENSA Y NEVERA</span>
+            <h1>Productos con caducidad <span class="count-badge" id="expirationCount">0</span></h1>
+            <p>Una lista compartida para que ninguno de los dos olvide los alimentos más delicados.</p>
+          </div>
+          <form class="expiration-add-form" id="manualExpirationForm">
+            <label>
+              <span>Producto</span>
+              <input id="manualExpirationProduct" autocomplete="off" placeholder="Por ejemplo, hamburguesas" required />
+            </label>
+            <label>
+              <span>Caduca el</span>
+              <input id="manualExpirationDate" type="date" required />
+            </label>
+            <button type="submit">Añadir</button>
+          </form>
+          <div id="expirationContent"></div>
+        </section>
+
+        <section class="view" id="ideasView" data-view="ideas">
+          <div class="page-intro">
+            <span class="eyebrow">REPONER SIN ESCRIBIR</span>
+            <h1>Comprados</h1>
+            <p>Recupera productos de compras anteriores y vuelve a añadirlos con un toque.</p>
+          </div>
+          <div id="ideasContent"></div>
+        </section>
+
+        <section class="view" id="historyView" data-view="history">
+          <div class="page-intro">
+            <span class="eyebrow">MEMORIA DE CASA</span>
+            <h1>Historial</h1>
+            <p>Así puedo notar cuándo hace demasiado que no compráis algo.</p>
+          </div>
+          <div id="historyStats" class="stats-grid"></div>
+          <div id="historyContent"></div>
+        </section>
+      </main>
+
+      <div class="shopping-dock" id="shoppingDock" aria-hidden="true">
+        <div><strong id="shoppingProgress">0 de 0</strong><small>guardados en la cesta</small></div>
+        <button type="button" id="finishShopping">Terminar compra</button>
+      </div>
+
+      <nav class="bottom-nav" aria-label="Navegación principal">
+        <button class="active" type="button" data-nav="list">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
+          <span>Lista</span>
+        </button>
+        <button type="button" data-nav="expiration">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/><path d="M9 2h6"/></svg>
+          <span>Caducidad</span><i id="expirationDot"></i>
+        </button>
+        <button type="button" data-nav="ideas">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h16l-2 11H6L4 9ZM8 9l4-6 4 6M9 13v3M15 13v3"/></svg>
+          <span>Comprados</span><i id="ideaDot"></i>
+        </button>
+        <button type="button" data-nav="history">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+          <span>Historial</span>
+        </button>
+      </nav>
+    </div>
+
+    <dialog class="app-dialog item-edit-dialog" id="itemEditDialog" aria-labelledby="itemEditTitle">
+      <span class="eyebrow">EDITAR PRODUCTO</span>
+      <h2 id="itemEditTitle">Producto</h2>
+      <p>Cambia lo necesario o añade una foto para que no haya dudas.</p>
+      <form id="itemEditForm">
+        <div class="item-edit-fields">
+          <label>
+            <span>Nombre</span>
+            <input id="itemEditName" type="text" maxlength="80" autocomplete="off" required />
+          </label>
+          <div class="item-edit-row">
+            <label>
+              <span>Cantidad</span>
+              <input id="itemEditQuantity" type="number" min="1" max="99" step="1" inputmode="numeric" required />
+            </label>
+            <label>
+              <span>Familia</span>
+              <select id="itemEditCategory" required></select>
+            </label>
+          </div>
+        </div>
+        <div class="item-photo-editor">
+          <div class="item-photo-preview">
+            <img id="itemEditPhotoPreview" alt="Foto del producto" hidden />
+            <span id="itemEditPhotoEmpty" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 7h4l2-2h4l2 2h4v12H4z"/><circle cx="12" cy="13" r="3"/></svg>
+            </span>
+          </div>
+          <div class="item-photo-copy">
+            <strong>Foto opcional</strong>
+            <small>Útil si necesitas una marca, un tamaño o un envase concreto.</small>
+            <label class="item-photo-picker" id="itemEditPhotoButton">
+              <span id="itemEditPhotoButtonText">Hacer o elegir foto</span>
+              <input id="itemEditPhotoInput" type="file" accept="image/*" />
+            </label>
+            <button class="item-photo-remove" id="itemEditPhotoRemove" type="button" hidden>Quitar foto</button>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button class="primary" id="itemEditSave" type="submit">Guardar cambios</button>
+          <button class="secondary" id="itemEditCancel" type="button">Cancelar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="app-dialog" id="duplicateDialog">
+      <div class="dialog-icon duplicate-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v11H8z"/><path d="M16 8V5H5v11h3"/></svg>
+      </div>
+      <span class="eyebrow">YA ESTABA APUNTADO</span>
+      <h2 id="duplicateTitle">¿Lo compramos dos veces?</h2>
+      <p id="duplicateText"></p>
+      <div class="dialog-actions">
+        <button class="primary" id="duplicateYes" type="button">Sí, comprar más</button>
+        <button class="secondary" id="duplicateNo" type="button">No, dejarlo como está</button>
+      </div>
+    </dialog>
+
+    <dialog class="app-dialog" id="finishDialog">
+      <div class="dialog-icon finish-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+      </div>
+      <span class="eyebrow">TODO COMPRADO</span>
+      <h2>¿Guardamos lo que has comprado?</h2>
+      <p id="finishText"></p>
+      <div class="dialog-actions">
+        <button class="primary" id="finishConfirm" type="button">Guardar compra</button>
+        <button class="secondary" id="finishCancel" type="button">Seguir comprando</button>
+      </div>
+    </dialog>
+
+    <dialog class="app-dialog expiration-date-dialog" id="expirationDateDialog" aria-labelledby="expirationDateProduct" aria-describedby="expirationDateHelp">
+      <div class="expiration-dialog-header">
+        <div class="expiration-dialog-kicker">
+          <span>CONTROL DE CADUCIDAD</span>
+          <span id="expirationDateProgress">Producto 1 de 1</span>
+        </div>
+        <div class="expiration-product-card">
+          <div class="dialog-icon expiration-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3M17 3v3M4 9h16M5 5h14v16H5z"/><path d="m9 15 2 2 4-5"/></svg>
+          </div>
+          <div class="expiration-product-copy">
+            <span id="expirationDateContext">PRODUCTO COMPRADO</span>
+            <h2 id="expirationDateProduct">Producto</h2>
+            <small id="expirationDateAmount" hidden></small>
+          </div>
+        </div>
+      </div>
+      <div class="expiration-dialog-body">
+        <h3 id="expirationDateTitle">¿Cuándo caduca?</h3>
+        <p id="expirationDateHelp">Elige una opción rápida o abre el calendario. Te avisaré 3 días antes y de nuevo cuando falte 1.</p>
+        <div class="expiration-quick-dates" aria-label="Fechas rápidas">
+          <button type="button" data-expiration-offset="0">Hoy</button>
+          <button type="button" data-expiration-offset="1">Mañana</button>
+          <button type="button" data-expiration-offset="3">En 3 días</button>
+          <button type="button" data-expiration-offset="7">En 7 días</button>
+        </div>
+        <label class="expiration-date-field">
+          <span id="expirationDateLabel">Otra fecha exacta</span>
+          <input id="expirationDateInput" type="date" aria-labelledby="expirationDateProduct expirationDateLabel" required />
+        </label>
+        <div class="dialog-actions">
+          <button class="primary" id="expirationDateSave" type="button">Guardar fecha</button>
+          <button class="secondary" id="expirationDateSkip" type="button">Este producto no necesita fecha</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="app-dialog" id="extraExpirationDialog">
+      <div class="dialog-icon expiration-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v16H5zM8 3v4M16 3v4M8 11h8M8 15h5"/><path d="M18 14v6M15 17h6"/></svg>
+      </div>
+      <span class="eyebrow">COMPRA EXTRA</span>
+      <h2>Guardar producto y caducidad</h2>
+      <p>Lo añadiré al historial aunque no estuviera en la lista.</p>
+      <div class="extra-purchase-fields">
+        <label>
+          <span>Producto comprado</span>
+          <input id="extraProductInput" type="text" placeholder="Por ejemplo, hamburguesas" autocomplete="off" required />
+        </label>
+        <label>
+          <span>Fecha de caducidad</span>
+          <input id="extraExpirationInput" type="date" required />
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button class="primary" id="extraExpirationSave" type="button">Guardar producto</button>
+        <button class="secondary" id="extraExpirationCancel" type="button">Cancelar</button>
+      </div>
+    </dialog>
+
+    <dialog class="app-dialog expiration-alert-dialog" id="expirationAlertDialog">
+      <div class="dialog-icon expiration-warning-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5M12 17h.01"/></svg>
+      </div>
+      <span class="eyebrow">CADUCIDAD PRÓXIMA</span>
+      <h2 id="expirationAlertTitle"></h2>
+      <p id="expirationAlertText"></p>
+      <div class="dialog-actions">
+        <button class="primary" id="expirationConsumedYes" type="button">Sí, ya está consumido</button>
+        <button class="secondary" id="expirationConsumedNo" type="button">No, todavía</button>
+      </div>
+    </dialog>
+
+    <dialog class="app-dialog special-list-dialog" id="specialListDialog">
+      <div class="dialog-icon special-list-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+      </div>
+      <span class="eyebrow">LISTA PUNTUAL</span>
+      <h2 id="specialListDialogTitle">Nueva lista especial</h2>
+      <p>Será independiente de tu lista habitual, el historial y las sugerencias.</p>
+      <form id="specialListForm">
+        <label class="special-list-name-field">
+          <span>Nombre de la lista</span>
+          <input id="specialListName" type="text" maxlength="50" placeholder="Por ejemplo, Navidad" autocomplete="off" required />
+        </label>
+        <div class="dialog-actions">
+          <button class="primary" id="specialListSave" type="submit">Crear lista</button>
+          <button class="secondary" id="specialListCancel" type="button">Cancelar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="app-dialog account-dialog" id="accountDialog">
+      <div class="dialog-icon account-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-8 8-8s8 3 8 8"/></svg>
+      </div>
+      <span class="eyebrow" id="accountDialogEyebrow">TU CUENTA</span>
+      <h2 id="accountDialogTitle">Entra para compartir</h2>
+      <p id="accountDialogText">La lista seguirá funcionando sin cuenta en este móvil. Inicia sesión únicamente para compartirla y sincronizarla con tu familia.</p>
+      <div class="account-provider-actions">
+        <button class="provider-button google" id="googleSignInButton" type="button"><span aria-hidden="true">G</span>Continuar con Google</button>
+        <button class="provider-button apple" id="appleSignInButton" type="button"><span aria-hidden="true">●</span>Continuar con Apple</button>
+      </div>
+      <small class="account-guidance" id="accountDialogGuidance">No tendrás que crear ni recordar otra contraseña.</small>
+      <button class="secondary account-cancel" id="accountCancelButton" type="button">Seguir sin cuenta</button>
+    </dialog>
+
+    <dialog class="app-dialog invite-dialog" id="inviteDialog">
+      <div class="dialog-icon account-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M4 12h16M14 6l6 6-6 6"/><circle cx="7" cy="7" r="3"/><path d="M2 19c0-4 2-6 5-6"/></svg>
+      </div>
+      <span class="eyebrow">INVITACIÓN</span>
+      <h2 id="inviteTitle">Te han compartido una lista</h2>
+      <p id="inviteText">Inicia sesión para verla y actualizarla junto a tu familia.</p>
+      <div class="dialog-actions">
+        <button class="primary" id="inviteAcceptButton" type="button">Aceptar invitación</button>
+        <button class="secondary" id="inviteCancelButton" type="button">Ahora no</button>
+      </div>
+    </dialog>
+
+    <dialog class="app-dialog members-dialog" id="membersDialog">
+      <div class="dialog-icon account-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c0-5 2-8 6-8s6 3 6 8M14 14c4 0 6 2 6 6"/></svg>
+      </div>
+      <span class="eyebrow">PERSONAS CON ACCESO</span>
+      <h2>Tu lista familiar</h2>
+      <p>Todos pueden añadir, tachar y actualizar productos en tiempo real.</p>
+      <div class="members-list" id="membersList"></div>
+      <div class="dialog-actions">
+        <button class="primary" id="membersInviteButton" type="button">Invitar por WhatsApp</button>
+        <button class="secondary" id="membersCloseButton" type="button">Cerrar</button>
+      </div>
+    </dialog>
+
+    <dialog class="app-dialog shared-password-dialog" id="sharedPasswordDialog">
+      <div class="dialog-icon password-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>
+      </div>
+      <span class="eyebrow">LISTA PROTEGIDA</span>
+      <h2 id="sharedPasswordTitle">Contraseña de la lista</h2>
+      <p id="sharedPasswordText">La contraseña no viaja dentro del enlace.</p>
+      <form id="sharedPasswordForm">
+        <label class="special-list-name-field">
+          <span>Contraseña</span>
+          <input id="sharedPasswordInput" type="password" minlength="8" autocomplete="current-password" required />
+        </label>
+        <label class="special-list-name-field" id="sharedPasswordConfirmField" hidden>
+          <span>Repetir contraseña</span>
+          <input id="sharedPasswordConfirm" type="password" minlength="8" autocomplete="new-password" />
+        </label>
+        <small class="password-guidance">Mínimo 8 caracteres. Se recordará únicamente en este dispositivo.</small>
+        <div class="dialog-actions">
+          <button class="primary" id="sharedPasswordSave" type="submit">Abrir lista</button>
+          <button class="secondary" id="sharedPasswordCancel" type="button">Ahora no</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="settings-sheet" id="settingsDialog">
+      <div class="sheet-handle"></div>
+      <div class="sheet-heading">
+        <div><span class="eyebrow">PREFERENCIAS</span><h2>Ajustes</h2></div>
+        <button class="icon-button" id="settingsClose" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <label class="setting-row">
+        <span><strong>Confirmaciones por voz</strong><small>La app te responde al añadir y ante repetidos.</small></span>
+        <input id="speakToggle" type="checkbox" role="switch" />
+      </label>
+      <div class="settings-group account-settings">
+        <strong>Tu cuenta</strong>
+        <div class="account-summary" id="accountSummary">
+          <span class="account-avatar" id="accountAvatar" aria-hidden="true">?</span>
+          <span><b id="accountName">Sin iniciar sesión</b><small id="accountEmail">Puedes usar la app sin cuenta.</small></span>
+        </div>
+        <div class="settings-actions account-actions">
+          <button class="family-share-button" id="accountSignInButton" type="button">Iniciar sesión</button>
+          <button id="accountSignOutButton" type="button" hidden>Cerrar sesión</button>
+        </div>
+      </div>
+      <div class="settings-group family-settings">
+        <strong>Lista familiar compartida</strong>
+        <p id="familyStatus">Inicia sesión para compartirla de forma privada.</p>
+        <div class="settings-actions family-actions">
+          <button class="family-share-button" id="familyShareButton" type="button">Invitar por WhatsApp</button>
+          <button id="familyMembersButton" type="button" hidden>Ver personas</button>
+          <button id="familyDisconnectButton" type="button" hidden>Dejar de compartir</button>
+        </div>
+        <div class="account-list-memberships" id="accountListMemberships"></div>
+        <small class="family-privacy">Cada familiar entra con Google o Apple. Puedes quitar su acceso cuando quieras.</small>
+      </div>
+      <div class="settings-group">
+        <strong>Tus datos</strong>
+        <p>La app conserva una copia en este móvil. Si activas la lista familiar, también la sincroniza para los dos.</p>
+        <div class="settings-actions">
+          <button id="exportButton" type="button">Exportar copia</button>
+          <label class="import-button">Importar copia<input id="importInput" type="file" accept="application/json" /></label>
+        </div>
+      </div>
+      <button class="danger-button" id="clearButton" type="button">Borrar lista e historial</button>
+      <button class="danger-button account-delete" id="deleteAccountButton" type="button" hidden>Eliminar mi cuenta y mis datos</button>
+      <p class="legal-links"><a href="privacy.html">Política de privacidad</a> · <a href="support.html">Ayuda y contacto</a></p>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="app.mjs?v=34"></script>
+  </body>
+</html>
+
